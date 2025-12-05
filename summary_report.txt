@@ -1,0 +1,8 @@
+Excel to PDF Conversion Summary Report
+Generated on: 2025-12-05 17:36:41
+----------------------------------------
+Total Files : 0
+Successful  : 0
+Errors      : 0
+Skipped     : 0
+----------------------------------------

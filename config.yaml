@@ -1,0 +1,12 @@
+timeout_minutes: 45
+output_suffix: "_x"
+excel:
+  optimize_layout: true
+  auto_orientation: true
+  enhance_layout: true
+  enhanced_dir: "enhanced_files"
+logging:
+  log_file: "conversion.log"
+  error_file: "errors.log"
+  log_level: "INFO"       # DEBUG, INFO, WARNING, ERROR
+  log_console_lines: 20   # Number of lines to show in UI console

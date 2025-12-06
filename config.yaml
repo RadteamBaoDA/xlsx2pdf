@@ -1,12 +1,42 @@
 timeout_minutes: 45
 output_suffix: "_x"
 excel:
-  optimize_layout: true
-  auto_orientation: true
-  enhance_layout: true  # Adjust row heights to show hidden text
-  enhanced_dir: "enhanced_files"
+  # Single option to prepare Excel for print - includes:
+  # - Expand all collapsed rows/columns and groups
+  # - Fix hidden text by auto-fitting row heights
+  # - Fix shrunk images by setting proper placement
+  # - Auto-select paper size and orientation
+  # - Fit columns to page width
+  prepare_for_print: false
+  enhanced_dir: "enhanced_files"  # Directory for intermediate enhanced files
 logging:
   log_file: "conversion.log"
   error_file: "errors.log"
   log_level: "INFO"       # DEBUG, INFO, WARNING, ERROR
   log_console_lines: 20   # Number of lines to show in UI console
+
+# Print options for PDF conversion per sheet
+# Modes: auto, one_page, table_row_break, auto_page_size, native_print
+print_options:
+  mode: "auto"            # Default print mode
+  page_size: "auto"       # auto, letter, tabloid, legal, statement, executive, A3, A4, A5, B4, B5
+  rows_per_page: null     # Fixed rows per page for table_row_break (null = auto-detect tables)
+  native_printer: "Microsoft Print to PDF"  # Printer name for native_print mode
+  
+  # Scaling options (same as Excel's print scaling)
+  # Options: no_scaling, fit_sheet, fit_columns, fit_rows, custom
+  scaling: "fit_columns"  # Default: fit all columns on one page
+  scaling_percent: 100    # Custom scaling percentage (1-400), used when scaling: custom
+  
+  # Margin options (same as Excel's print margins)
+  # Options: normal, wide, narrow, custom
+  margins: "normal"       # Default: normal margins
+  # Custom margin values in cm (used when margins: custom)
+  custom_margins:
+    top: 1.91
+    bottom: 1.91
+    left: 1.78
+    right: 1.78
+    header: 0.76
+    footer: 0.76
+

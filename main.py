@@ -78,10 +78,10 @@ def main():
     input_root = os.path.abspath(args.input)
     output_root = os.path.abspath(args.output)
     
-    # Enhanced root (optional)
-    enhance_layout = config.get('excel', {}).get('enhance_layout', False)
+    # Enhanced root (optional) - used when prepare_for_print is enabled
+    prepare_for_print = config.get('excel', {}).get('prepare_for_print', True)
     enhanced_dir_name = config.get('excel', {}).get('enhanced_dir', 'enhanced_files')
-    enhanced_root = os.path.abspath(enhanced_dir_name) if enhance_layout else None
+    enhanced_root = os.path.abspath(enhanced_dir_name) if prepare_for_print else None
 
     # Scan files first
     print("Scanning files...")
@@ -144,17 +144,17 @@ def main():
             
             file_to_convert = input_path
             
-            if enhance_layout:
-                progress.update(task, description=f"[cyan]Enhancing: {os.path.basename(input_path)}")
+            if prepare_for_print:
+                progress.update(task, description=f"[cyan]Preparing: {os.path.basename(input_path)}")
                 # We can log this too
-                log_info(f"[{os.path.basename(input_path)}] Starting layout enhancement")
+                log_info(f"[{os.path.basename(input_path)}] Preparing for print")
                 
                 try:
                     file_to_convert = copy_to_enhanced(input_path, input_root, enhanced_root)
                 except Exception as e:
-                    log_error(input_path, f"Failed to copy/enhance: {e}")
+                    log_error(input_path, f"Failed to copy/prepare: {e}")
                     error_count += 1
-                    error_files_list.append(f"{input_path} (Enhance-Copy Failed)")
+                    error_files_list.append(f"{input_path} (Prepare Failed)")
                     progress.advance(task)
                     continue
 

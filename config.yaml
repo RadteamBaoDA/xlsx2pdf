@@ -3,7 +3,7 @@ output_suffix: "_x"
 excel:
   optimize_layout: true
   auto_orientation: true
-  enhance_layout: true
+  enhance_layout: true  # Adjust row heights to show hidden text
   enhanced_dir: "enhanced_files"
 logging:
   log_file: "conversion.log"

@@ -24,6 +24,8 @@ xlPaperA4 = 9           # 21 x 29.7 cm
 xlPaperA5 = 11          # 14.8 x 21 cm
 xlPaperB4 = 12          # 25.7 x 36.4 cm (JIS)
 xlPaperB5 = 13          # 18.2 x 25.7 cm (JIS)
+xlPaperA2 = 66          # 42 x 59.4 cm (based on extended paper size constants)
+xlPaperA1 = 67          # 59.4 x 84.1 cm (based on extended paper size constants)
 
 # Print Mode Constants
 PRINT_MODE_AUTO = "auto"
@@ -31,6 +33,7 @@ PRINT_MODE_ONE_PAGE = "one_page"
 PRINT_MODE_TABLE_ROW_BREAK = "table_row_break"
 PRINT_MODE_AUTO_PAGE_SIZE = "auto_page_size"
 PRINT_MODE_NATIVE_PRINT = "native_print"
+PRINT_MODE_UNIFORM_PAGE_SIZE = "uniform_page_size"
 
 # Page sizes in points (1 inch = 72 points, 1 cm = 28.35 points)
 # These are printable area estimates (minus typical margins)
@@ -40,6 +43,8 @@ PAGE_SIZES = {
     "LEGAL": {"width": 612, "height": 1008, "printable_height": 915, "xl_const": xlPaperLegal},
     "STATEMENT": {"width": 396, "height": 612, "printable_height": 520, "xl_const": xlPaperStatement},
     "EXECUTIVE": {"width": 522, "height": 756, "printable_height": 665, "xl_const": xlPaperExecutive},
+    "A1": {"width": 1684, "height": 2384, "printable_height": 2290, "xl_const": xlPaperA1},
+    "A2": {"width": 1191, "height": 1684, "printable_height": 1590, "xl_const": xlPaperA2},
     "A3": {"width": 842, "height": 1191, "printable_height": 1100, "xl_const": xlPaperA3},
     "A4": {"width": 595, "height": 842, "printable_height": 750, "xl_const": xlPaperA4},
     "A5": {"width": 420, "height": 595, "printable_height": 505, "xl_const": xlPaperA5},
@@ -200,6 +205,10 @@ class ExcelConverter:
                     self._apply_table_row_break_mode(sheet, workbook.Name, rows_per_page)
                 elif print_mode == PRINT_MODE_AUTO_PAGE_SIZE:
                     self._apply_auto_page_size_mode(sheet, workbook.Name, page_size)
+                elif print_mode == PRINT_MODE_UNIFORM_PAGE_SIZE:
+                    # Uniform page size is handled at workbook level, not per-sheet
+                    # Skip here - will be applied after all sheets are processed
+                    pass
                 elif prepare_for_print:
                     # Default AUTO mode
                     self._apply_auto_mode(sheet, workbook.Name)
@@ -235,6 +244,10 @@ class ExcelConverter:
 
             except Exception as e:
                 logging.warning(f"Could not prepare sheet {sheet.Name}: {e}")
+
+        # Handle uniform_page_size mode at workbook level (after all sheets processed)
+        if print_mode == PRINT_MODE_UNIFORM_PAGE_SIZE:
+            self._apply_uniform_page_size_mode(workbook, page_size)
 
     def _expand_all_groups(self, sheet, workbook_name):
         """
@@ -543,13 +556,13 @@ class ExcelConverter:
             if content_width <= page_height:
                 return size_name
         
-        # If nothing fits, return largest size (TABLOID)
-        return "TABLOID"
+        # If nothing fits, return largest size (A1)
+        return "A1"
 
     def _apply_auto_page_size_mode(self, sheet, workbook_name, page_size="A4"):
         """
         AUTO PAGE SIZE mode - calculate page breaks based on selected page size.
-        Supports: auto, letter, tabloid, legal, statement, executive, A3, A4, A5, B4, B5
+        Supports: auto, letter, tabloid, legal, statement, executive, A1, A2, A3, A4, A5, B4, B5
         """
         # Get content dimensions first for auto page size detection
         try:
@@ -618,6 +631,120 @@ class ExcelConverter:
             logging.info(f"[{workbook_name}] {sheet.Name}: Created {page_count} pages for {page_size}")
         except Exception as e:
             logging.warning(f"Error calculating auto page breaks: {e}")
+
+    def _find_max_content_width(self, workbook):
+        """
+        Scan all sheets in the workbook and find the maximum content width.
+        Returns (max_width, max_height) in points.
+        """
+        max_width = 0
+        max_height = 0
+        
+        for sheet in workbook.Sheets:
+            try:
+                width = sheet.UsedRange.Width
+                height = sheet.UsedRange.Height
+                
+                if width > max_width:
+                    max_width = width
+                if height > max_height:
+                    max_height = height
+                    
+                logging.info(f"[{workbook.Name}] {sheet.Name}: Content size {width:.0f}x{height:.0f}pts")
+            except Exception as e:
+                logging.warning(f"Could not get dimensions for sheet {sheet.Name}: {e}")
+                continue
+        
+        return max_width, max_height
+
+    def _apply_uniform_page_size_mode(self, workbook, page_size="auto"):
+        """
+        UNIFORM PAGE SIZE mode - find the sheet with largest content width
+        and apply that page size to ALL sheets in the workbook.
+        
+        If page_size is "auto", automatically selects the smallest paper size
+        that can fit the widest sheet content.
+        """
+        logging.info(f"[{workbook.Name}] Applying Uniform Page Size mode")
+        
+        # Step 1: Find maximum content width across all sheets
+        max_width, max_height = self._find_max_content_width(workbook)
+        logging.info(f"[{workbook.Name}] Maximum content dimensions: {max_width:.0f}x{max_height:.0f}pts")
+        
+        # Step 2: Determine page size to use
+        page_size_upper = page_size.upper() if page_size else "AUTO"
+        if page_size_upper == "AUTO":
+            page_size_upper = self._find_best_page_size(max_width, max_height)
+            logging.info(f"[{workbook.Name}] Auto-selected page size: {page_size_upper}")
+        
+        # Get page info
+        if page_size_upper in PAGE_SIZES:
+            page_info = PAGE_SIZES[page_size_upper]
+        else:
+            page_info = PAGE_SIZES["A4"]
+            page_size_upper = "A4"
+        
+        logging.info(f"[{workbook.Name}] Applying {page_size_upper} to all sheets")
+        
+        # Step 3: Apply uniform page size to ALL sheets
+        for sheet in workbook.Sheets:
+            try:
+                # Set paper size
+                sheet.PageSetup.PaperSize = page_info["xl_const"]
+                
+                # Get sheet's own dimensions for orientation
+                try:
+                    sheet_width = sheet.UsedRange.Width
+                    sheet_height = sheet.UsedRange.Height
+                except:
+                    sheet_width = 0
+                    sheet_height = 0
+                
+                # Set orientation based on content
+                if sheet_width > sheet_height:
+                    sheet.PageSetup.Orientation = xlLandscape
+                    printable_height = page_info["width"] - 100
+                else:
+                    sheet.PageSetup.Orientation = xlPortrait
+                    printable_height = page_info["printable_height"]
+                
+                # Fit width to 1 page
+                sheet.PageSetup.Zoom = False
+                sheet.PageSetup.FitToPagesWide = 1
+                sheet.PageSetup.FitToPagesTall = False
+                
+                # Clear print area to print entire sheet
+                try:
+                    sheet.PageSetup.PrintArea = ""
+                except:
+                    pass
+                
+                # Clear existing page breaks
+                try:
+                    sheet.ResetAllPageBreaks()
+                except:
+                    pass
+                
+                # Calculate and insert page breaks based on row heights
+                accumulated_height = 0
+                page_count = 1
+                
+                for row in sheet.UsedRange.Rows:
+                    try:
+                        row_height = row.Height
+                        accumulated_height += row_height
+                        
+                        if accumulated_height > printable_height:
+                            sheet.HPageBreaks.Add(Before=row)
+                            page_count += 1
+                            accumulated_height = row_height
+                    except:
+                        continue
+                
+                logging.info(f"[{workbook.Name}] {sheet.Name}: Applied {page_size_upper}, {page_count} pages")
+                
+            except Exception as e:
+                logging.warning(f"Could not apply uniform page size to sheet {sheet.Name}: {e}")
 
     def _print_to_pdf(self, workbook, output_path, printer_name):
         """

@@ -16,10 +16,11 @@ logging:
   log_console_lines: 20   # Number of lines to show in UI console
 
 # Print options for PDF conversion per sheet
-# Modes: auto, one_page, table_row_break, auto_page_size, native_print
+# Modes: auto, one_page, table_row_break, auto_page_size, native_print, uniform_page_size
+#   - uniform_page_size: scans all sheets, finds largest width, applies that page size to ALL sheets
 print_options:
   mode: "auto"            # Default print mode
-  page_size: "auto"       # auto, letter, tabloid, legal, statement, executive, A3, A4, A5, B4, B5
+  page_size: "auto"       # auto, letter, tabloid, legal, statement, executive, A1, A2, A3, A4, A5, B4, B5
   rows_per_page: null     # Fixed rows per page for table_row_break (null = auto-detect tables)
   native_printer: "Microsoft Print to PDF"  # Printer name for native_print mode
   

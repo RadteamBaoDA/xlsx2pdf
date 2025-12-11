@@ -399,6 +399,19 @@ class ExcelConverter:
                 self._apply_margins(sheet, workbook.Name, margins, custom_margins)
 
                 # ========================================
+                # STEP 6.5: APPLY CUSTOM PAGE BREAKS
+                # Insert page breaks based on row/column limits
+                # ========================================
+                rows_per_page_custom = print_options.get('rows_per_page')
+                columns_per_page_custom = print_options.get('columns_per_page')
+                
+                if rows_per_page_custom:
+                    self._insert_page_breaks_by_rows(sheet, workbook.Name, rows_per_page_custom)
+                
+                if columns_per_page_custom:
+                    self._insert_page_breaks_by_columns(sheet, workbook.Name, columns_per_page_custom)
+
+                # ========================================
                 # STEP 7: SETUP HEADER AND FOOTER
                 # Add sheet name to header and row range to footer
                 # ========================================
@@ -726,6 +739,27 @@ class ExcelConverter:
             logging.info(f"[{workbook_name}] {sheet.Name}: Inserted {breaks_count} page breaks (every {rows_per_page} rows)")
         except Exception as e:
             logging.warning(f"Error inserting row-based page breaks: {e}")
+
+    def _insert_page_breaks_by_columns(self, sheet, workbook_name, columns_per_page):
+        """
+        Insert vertical page breaks every N columns.
+        Automatically splits content into new pages when column count reaches limit.
+        """
+        try:
+            used_cols = sheet.UsedRange.Columns.Count
+            start_col = sheet.UsedRange.Column
+            
+            # Insert vertical page breaks at column intervals
+            for col in range(start_col + columns_per_page, start_col + used_cols, columns_per_page):
+                try:
+                    sheet.VPageBreaks.Add(Before=sheet.Columns(col))
+                except:
+                    pass
+            
+            breaks_count = (used_cols // columns_per_page)
+            logging.info(f"[{workbook_name}] {sheet.Name}: Inserted {breaks_count} vertical page breaks (every {columns_per_page} columns)")
+        except Exception as e:
+            logging.warning(f"Error inserting column-based page breaks: {e}")
 
     def _find_best_page_size(self, content_width, content_height):
         """

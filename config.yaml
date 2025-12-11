@@ -40,6 +40,10 @@ logging:
 #   - sheets: null                       # Default config for all other sheets (no sheets specified)
 #     priority: 99                       # Lowest priority (default fallback)
 #     mode: "auto"
+      #Page break controls - automatically split content into multiple pages
+      #rows_per_page: null       # Add horizontal page break every N rows (null = no automatic row breaks). Example: 50 = new page every 50 rows
+      #columns_per_page: null    # Add vertical page break every N columns (null = no automatic column breaks). Example: 10 = new page every 10 columns
+  
 #     scaling: "fit_columns"
 #     margins: "normal"
 #     print_header_footer: true
@@ -51,7 +55,11 @@ print_options:
   priority: 1               # Priority (only matters when using multiple configs)
   mode: "auto"              # Default print mode with scaling applied
   page_size: "auto"         # auto, letter, tabloid, legal, statement, executive, A1, A2, A3, A4, A5, B4, B5
-  rows_per_page: null       # Fixed rows per page for table_row_break (null = auto-detect tables)
+  
+  # Page break controls - automatically split content into multiple pages
+  rows_per_page: null       # Add horizontal page break every N rows (null = no automatic row breaks). Example: 50 = new page every 50 rows
+  columns_per_page: null    # Add vertical page break every N columns (null = no automatic column breaks). Example: 10 = new page every 10 columns
+  
   native_printer: "Microsoft Print to PDF"  # Printer name for native_print mode
   
   # Scaling options (same as Excel's print scaling)

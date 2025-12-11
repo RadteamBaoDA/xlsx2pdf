@@ -236,21 +236,7 @@ class ExcelConverter:
                     table = sheet.ListObjects(i)
                     table_range = table.Range
                     
-                    # Ensure header row is visible
-                    if table.ShowHeaders:
-                        try:
-                            header_row = table.HeaderRowRange
-                            if header_row:
-                                header_row.Rows.AutoFit()
-                        except:
-                            pass
-                    
-                    # Auto-fit data body range rows
-                    try:
-                        if table.DataBodyRange:
-                            table.DataBodyRange.Rows.AutoFit()
-                    except:
-                        pass
+                    # DISABLED: Do not autofit table rows - preserve original heights
                     
                     # Ensure table style allows printing
                     try:
@@ -1260,10 +1246,11 @@ class ExcelConverter:
             raise
 
     def _autofit_merged_cells(self, sheet, workbook_name):
-        """
-        Manually calculates and sets row height for merged cells with wrapped text.
-        This is required because Excel's AutoFit ignores merged cells.
-        """
+        """DISABLED: Preserves original merged cell heights."""
+        logging.info(f"[{workbook_name}] {sheet.Name}: Preserving original merged cell layout")
+        return
+    def _autofit_merged_cells_DELETED(self, sheet, workbook_name):
+        """OLD VERSION"""
         try:
             used_range = sheet.UsedRange
             # Performance safeguard: skip if too many rows

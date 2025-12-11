@@ -8,6 +8,8 @@ import logging
 from .utils import ensure_dir
 
 # Excel Constants
+xlTypePDF = 0
+xlQualityStandard = 0
 xlLandscape = 2
 xlPortrait = 1
 
@@ -108,9 +110,8 @@ class ExcelConverter:
             # Ensure output directory exists
             ensure_dir(output_path)
             
-            # Use native PrintOut to virtual PDF printer for all conversions
-            printer_name = self.config.get('print_options', {}).get('native_printer', 'Microsoft Print to PDF')
-            self._print_to_pdf(workbook, output_path, printer_name)
+            # Export to PDF using ExportAsFixedFormat (reliable, no dialog)
+            self._export_to_pdf(workbook, output_path)
             
             return True
 
@@ -149,6 +150,455 @@ class ExcelConverter:
         except Exception as e:
             logging.warning(f"Could not fix shape placement in {sheet.Name}: {e}")
 
+    def _fit_shapes_to_cells(self, sheet, workbook_name):
+        """
+        Fits shapes/images to their containing cells while maintaining aspect ratio.
+        Also ensures shapes don't overlap with cell text content.
+        """
+        try:
+            fitted_count = 0
+            
+            for shape in sheet.Shapes:
+                try:
+                    # Get the anchor cell(s) for this shape
+                    top_left_cell = shape.TopLeftCell
+                    
+                    # Check if the anchor cell has text content
+                    cell_has_text = False
+                    try:
+                        cell_value = top_left_cell.Value
+                        if cell_value is not None and str(cell_value).strip() != "":
+                            cell_has_text = True
+                    except:
+                        pass
+                    
+                    # If cell has text, move shape to not overlap
+                    if cell_has_text:
+                        try:
+                            # Option 1: Move shape to the right of text
+                            # Get text width estimation
+                            text_len = len(str(top_left_cell.Value)) if top_left_cell.Value else 0
+                            char_width = 7  # Approximate pixels per character
+                            text_width = text_len * char_width
+                            
+                            # Position shape after text
+                            shape.Left = top_left_cell.Left + text_width + 5
+                            fitted_count += 1
+                        except:
+                            pass
+                    
+                    # Calculate the cell dimensions
+                    try:
+                        bottom_right_cell = shape.BottomRightCell
+                        
+                        # Calculate total cell area width and height
+                        cell_width = 0
+                        cell_height = 0
+                        
+                        start_row = top_left_cell.Row
+                        end_row = bottom_right_cell.Row
+                        start_col = top_left_cell.Column
+                        end_col = bottom_right_cell.Column
+                        
+                        # Sum up the heights of all rows the shape spans
+                        for r in range(start_row, end_row + 1):
+                            cell_height += sheet.Rows(r).RowHeight
+                        
+                        # Sum up the widths of all columns the shape spans
+                        for c in range(start_col, end_col + 1):
+                            cell_width += sheet.Columns(c).Width
+                        
+                    except:
+                        # Fallback to single cell dimensions
+                        cell_width = top_left_cell.Width
+                        cell_height = top_left_cell.RowHeight
+                    
+                    # Get current shape dimensions
+                    shape_width = shape.Width
+                    shape_height = shape.Height
+                    
+                    # Only resize if shape is larger than cell area (with padding)
+                    padding = 4  # pixels padding
+                    max_width = cell_width - padding
+                    max_height = cell_height - padding
+                    
+                    # Account for text if present
+                    if cell_has_text:
+                        max_width = max_width - text_width - 10
+                    
+                    if max_width > 0 and max_height > 0:
+                        if shape_width > max_width or shape_height > max_height:
+                            # Calculate scale factor maintaining aspect ratio
+                            scale_x = max_width / shape_width if shape_width > 0 else 1
+                            scale_y = max_height / shape_height if shape_height > 0 else 1
+                            scale = min(scale_x, scale_y)
+                            
+                            if scale < 1:  # Only shrink, don't enlarge
+                                # Lock aspect ratio and resize
+                                try:
+                                    shape.LockAspectRatio = True
+                                except:
+                                    pass
+                                
+                                shape.Width = shape_width * scale
+                                shape.Height = shape_height * scale
+                                fitted_count += 1
+                        
+                except Exception as e:
+                    continue
+            
+            if fitted_count > 0:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Fitted {fitted_count} shapes to cells")
+                
+        except Exception as e:
+            logging.warning(f"Could not fit shapes to cells in {sheet.Name}: {e}")
+
+    def _ensure_shapes_visible(self, sheet, workbook_name):
+        """
+        Ensures all shapes (images, charts, objects) are visible and properly sized.
+        Fixes issues where images/objects may be hidden or clipped.
+        """
+        try:
+            shape_count = 0
+            fixed_count = 0
+            
+            for shape in sheet.Shapes:
+                try:
+                    shape_count += 1
+                    
+                    # Ensure shape is visible
+                    if hasattr(shape, 'Visible'):
+                        if not shape.Visible:
+                            shape.Visible = True
+                            fixed_count += 1
+                    
+                    # Ensure shape prints
+                    try:
+                        shape.PrintObject = True
+                    except:
+                        pass
+                    
+                    # Get the cell range the shape is in
+                    try:
+                        top_left_cell = shape.TopLeftCell
+                        
+                        # Ensure the row containing the shape is tall enough
+                        if shape.Height > top_left_cell.RowHeight:
+                            # Expand row to fit the shape
+                            top_left_cell.RowHeight = shape.Height + 5
+                            fixed_count += 1
+                            
+                    except:
+                        pass
+                        
+                except Exception as e:
+                    continue
+            
+            if fixed_count > 0:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Fixed {fixed_count} shapes/images visibility")
+            elif shape_count > 0:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Checked {shape_count} shapes/images")
+                
+        except Exception as e:
+            logging.warning(f"Could not ensure shapes visible in {sheet.Name}: {e}")
+
+    def _fix_tables_for_print(self, sheet, workbook_name):
+        """
+        Ensures Excel Tables (ListObjects) are properly formatted for printing.
+        Preserves fonts, styles, and ensures all content is visible.
+        """
+        try:
+            table_count = sheet.ListObjects.Count
+            if table_count == 0:
+                return
+            
+            for i in range(1, table_count + 1):
+                try:
+                    table = sheet.ListObjects(i)
+                    table_range = table.Range
+                    
+                    # Ensure header row is visible
+                    if table.ShowHeaders:
+                        try:
+                            header_row = table.HeaderRowRange
+                            if header_row:
+                                header_row.Rows.AutoFit()
+                        except:
+                            pass
+                    
+                    # Auto-fit data body range rows
+                    try:
+                        if table.DataBodyRange:
+                            table.DataBodyRange.Rows.AutoFit()
+                    except:
+                        pass
+                    
+                    # Ensure table style allows printing
+                    try:
+                        # Make sure borders are visible for print
+                        table_range.Borders.LineStyle = 1  # xlContinuous
+                    except:
+                        pass
+                    
+                    logging.info(f"[{workbook_name}] {sheet.Name}: Prepared table '{table.Name}' for print")
+                    
+                except Exception as e:
+                    logging.warning(f"Could not fix table {i} in {sheet.Name}: {e}")
+                    
+        except Exception as e:
+            logging.warning(f"Could not fix tables in {sheet.Name}: {e}")
+
+    def _ensure_text_visible(self, sheet, workbook_name):
+        """
+        Ensures all text in cells is visible - handles wrapped text, 
+        shrink-to-fit, overflow text, and column width issues.
+        Also fixes issues where text is hidden due to empty cells in the same row.
+        """
+        try:
+            used_range = sheet.UsedRange
+            fixed_count = 0
+            
+            # Skip if too many cells (performance)
+            total_cells = used_range.Rows.Count * used_range.Columns.Count
+            if total_cells > 100000:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Skipping text visibility check (too many cells: {total_cells})")
+                return
+            
+            # First pass: Fix column widths to ensure all text is visible
+            # This handles the issue where text is cut off
+            for col_idx in range(1, used_range.Columns.Count + 1):
+                try:
+                    col = used_range.Columns(col_idx)
+                    actual_col = col.Column
+                    
+                    # Check if any cell in this column has content
+                    has_content = False
+                    max_text_len = 0
+                    
+                    for cell in col.Cells:
+                        try:
+                            if cell.Value is not None and str(cell.Value).strip() != "":
+                                has_content = True
+                                text_len = len(str(cell.Value))
+                                if text_len > max_text_len:
+                                    max_text_len = text_len
+                        except:
+                            continue
+                    
+                    if has_content:
+                        # Ensure minimum column width based on content
+                        current_width = sheet.Columns(actual_col).ColumnWidth
+                        # Estimate needed width (roughly 1 char = 1 width unit)
+                        min_needed = min(max_text_len * 1.2, 100)  # Cap at 100
+                        
+                        if current_width < min_needed * 0.5:
+                            # Column is too narrow, expand it
+                            sheet.Columns(actual_col).ColumnWidth = max(current_width, min_needed * 0.7)
+                            fixed_count += 1
+                except:
+                    continue
+            
+            # Second pass: Process each row to fix text visibility
+            for row in used_range.Rows:
+                try:
+                    row_num = row.Row
+                    
+                    # Process all cells in this row, not just non-empty ones
+                    for col_idx in range(1, used_range.Columns.Count + 1):
+                        try:
+                            cell = sheet.Cells(row_num, used_range.Column + col_idx - 1)
+                            
+                            # Get cell value
+                            cell_value = cell.Value
+                            
+                            # Skip truly empty cells
+                            if cell_value is None:
+                                continue
+                            
+                            cell_text = str(cell_value).strip()
+                            if cell_text == "":
+                                continue
+                            
+                            text_len = len(cell_text)
+                            
+                            # Check if text is being clipped by ShrinkToFit
+                            try:
+                                if cell.ShrinkToFit:
+                                    # If cell has a lot of text, disable shrink and enable wrap
+                                    if text_len > 30:
+                                        cell.ShrinkToFit = False
+                                        cell.WrapText = True
+                                        fixed_count += 1
+                            except:
+                                pass
+                            
+                            # Check if text overflows column width
+                            try:
+                                col_width = cell.ColumnWidth
+                                
+                                # If text is longer than column can display
+                                if text_len > col_width and not cell.MergeCells:
+                                    # Enable wrap text to show all content
+                                    if not cell.WrapText:
+                                        cell.WrapText = True
+                                        fixed_count += 1
+                            except:
+                                pass
+                            
+                            # Check if cell has both text and is covered by a shape
+                            try:
+                                cell_left = cell.Left
+                                cell_top = cell.Top
+                                cell_right = cell_left + cell.Width
+                                cell_bottom = cell_top + cell.Height
+                                
+                                for shape in sheet.Shapes:
+                                    try:
+                                        # Check if shape overlaps this cell
+                                        shape_left = shape.Left
+                                        shape_top = shape.Top
+                                        shape_right = shape_left + shape.Width
+                                        shape_bottom = shape_top + shape.Height
+                                        
+                                        # Simple overlap check
+                                        if (shape_left < cell_right and shape_right > cell_left and
+                                            shape_top < cell_bottom and shape_bottom > cell_top):
+                                            # Shape overlaps with text cell - move shape or adjust
+                                            # Move shape to right side of cell
+                                            if shape_left < cell_left + cell.Width / 2:
+                                                shape.Left = cell_right + 2
+                                                fixed_count += 1
+                                    except:
+                                        continue
+                            except:
+                                pass
+                                
+                        except:
+                            continue
+                            
+                except:
+                    continue
+            
+            # Third pass: Auto-fit rows to show wrapped text
+            try:
+                used_range.Rows.AutoFit()
+            except:
+                pass
+            
+            if fixed_count > 0:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Fixed text visibility in {fixed_count} cells/shapes")
+                
+        except Exception as e:
+            logging.warning(f"Could not ensure text visible in {sheet.Name}: {e}")
+
+    def _fix_cell_layout(self, sheet, workbook_name):
+        """
+        Fixes cell layout issues where empty cells cause text/content to be hidden.
+        Ensures each cell has proper boundaries and content doesn't overflow incorrectly.
+        """
+        try:
+            used_range = sheet.UsedRange
+            fixed_count = 0
+            
+            # Process each row
+            for row in used_range.Rows:
+                try:
+                    row_num = row.Row
+                    prev_cell_had_content = False
+                    
+                    # Process columns from left to right
+                    for col_idx in range(1, used_range.Columns.Count + 1):
+                        try:
+                            actual_col = used_range.Column + col_idx - 1
+                            cell = sheet.Cells(row_num, actual_col)
+                            
+                            cell_value = cell.Value
+                            has_content = cell_value is not None and str(cell_value).strip() != ""
+                            
+                            if has_content:
+                                # This cell has content
+                                # Check if previous cell was empty and might be causing overflow issues
+                                if not prev_cell_had_content and col_idx > 1:
+                                    # Previous cell was empty - ensure this cell's content starts at its boundary
+                                    try:
+                                        # Set horizontal alignment to left to prevent text from appearing in previous cell
+                                        # xlLeft = -4131
+                                        if cell.HorizontalAlignment == -4108:  # xlCenter
+                                            pass  # Keep center alignment
+                                        elif cell.HorizontalAlignment == -4152:  # xlRight
+                                            pass  # Keep right alignment
+                                        else:
+                                            cell.HorizontalAlignment = -4131  # xlLeft
+                                    except:
+                                        pass
+                                
+                                # Check if text is overflowing to the right
+                                text_len = len(str(cell_value))
+                                col_width = cell.ColumnWidth
+                                
+                                if text_len > col_width and not cell.WrapText and not cell.MergeCells:
+                                    # Check if next cell has content
+                                    if col_idx < used_range.Columns.Count:
+                                        next_cell = sheet.Cells(row_num, actual_col + 1)
+                                        next_has_content = next_cell.Value is not None and str(next_cell.Value).strip() != ""
+                                        
+                                        if next_has_content:
+                                            # Next cell has content - wrap or clip this cell's text
+                                            cell.WrapText = True
+                                            fixed_count += 1
+                                
+                                prev_cell_had_content = True
+                            else:
+                                prev_cell_had_content = False
+                                
+                        except:
+                            continue
+                            
+                except:
+                    continue
+            
+            if fixed_count > 0:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Fixed layout for {fixed_count} cells")
+                
+        except Exception as e:
+            logging.warning(f"Could not fix cell layout in {sheet.Name}: {e}")
+
+    def _autofit_columns_smart(self, sheet, workbook_name):
+        """
+        Smart autofit for columns - expands columns with hidden text but caps maximum width.
+        This prevents columns from becoming excessively wide.
+        """
+        try:
+            MAX_COLUMN_WIDTH = 100  # Maximum column width in characters
+            MIN_COLUMN_WIDTH = 8    # Minimum column width
+            
+            adjusted_count = 0
+            
+            for col in sheet.UsedRange.Columns:
+                try:
+                    original_width = col.ColumnWidth
+                    
+                    # AutoFit the column
+                    col.AutoFit()
+                    new_width = col.ColumnWidth
+                    
+                    # Cap the width if too wide
+                    if new_width > MAX_COLUMN_WIDTH:
+                        col.ColumnWidth = MAX_COLUMN_WIDTH
+                        adjusted_count += 1
+                    elif new_width < MIN_COLUMN_WIDTH and original_width >= MIN_COLUMN_WIDTH:
+                        # Don't shrink columns that were already reasonably sized
+                        col.ColumnWidth = original_width
+                        
+                except:
+                    continue
+            
+            if adjusted_count > 0:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Capped {adjusted_count} columns to max width")
+                
+        except Exception as e:
+            logging.warning(f"Could not autofit columns in {sheet.Name}: {e}")
+
     def _optimize_layout(self, workbook, print_mode=PRINT_MODE_AUTO):
         """
         Prepares workbook for print - merged logic from optimize_layout and enhance_layout.
@@ -169,18 +619,18 @@ class ExcelConverter:
                 logging.info(f"[{workbook.Name}] Processing Sheet: {sheet.Name}")
                 
                 # ========================================
-                # STEP 1: EXPAND ALL HIDDEN CONTENT
-                # Ensure nothing is collapsed/hidden before print
+                # STEP 1: EXPAND ALL HIDDEN CONTENT (ALWAYS)
+                # Critical for ExportAsFixedFormat - must show all content
                 # ========================================
-                if prepare_for_print:
-                    self._expand_all_groups(sheet, workbook.Name)
-                    self._unhide_rows_columns(sheet, workbook.Name)
+                self._expand_all_groups(sheet, workbook.Name)
+                self._unhide_rows_columns(sheet, workbook.Name)
                 
                 # ========================================
-                # STEP 2: FIX SHAPE/IMAGE PLACEMENT
-                # Prevent images from shrinking when rows resize
+                # STEP 2: FIX SHAPE/IMAGE PLACEMENT (ALWAYS)
+                # Prevent images from being hidden or distorted
                 # ========================================
                 self._fix_shape_placement(sheet)
+                self._ensure_shapes_visible(sheet, workbook.Name)
 
                 # ========================================
                 # STEP 3: PRINT MODE SPECIFIC SETUP
@@ -200,17 +650,25 @@ class ExcelConverter:
                     self._apply_auto_mode(sheet, workbook.Name)
 
                 # ========================================
-                # STEP 4: FIX HIDDEN TEXT IN CELLS
+                # STEP 4: FIX HIDDEN TEXT IN CELLS (ALWAYS)
                 # Auto-fit row heights to show all text
                 # ========================================
-                if prepare_for_print:
-                    # Auto-fit all rows
+                # Auto-fit all rows to show hidden text
+                try:
                     sheet.UsedRange.Rows.AutoFit()
-                    
-                    # Handle Merged Cells (AutoFit doesn't work on merged cells)
-                    self._autofit_merged_cells(sheet, workbook.Name)
-                    
-                    logging.info(f"[{workbook.Name}] {sheet.Name}: Adjusted row heights")
+                except Exception as e:
+                    logging.warning(f"[{workbook.Name}] {sheet.Name}: Could not autofit rows: {e}")
+                
+                # Auto-fit columns to show hidden text (within reason)
+                try:
+                    self._autofit_columns_smart(sheet, workbook.Name)
+                except Exception as e:
+                    logging.warning(f"[{workbook.Name}] {sheet.Name}: Could not autofit columns: {e}")
+                
+                # Handle Merged Cells (AutoFit doesn't work on merged cells)
+                self._autofit_merged_cells(sheet, workbook.Name)
+                
+                logging.info(f"[{workbook.Name}] {sheet.Name}: Adjusted row/column sizes")
 
                 # ========================================
                 # STEP 5: APPLY SCALING
@@ -244,6 +702,31 @@ class ExcelConverter:
                 # ========================================
                 print_headings = print_options.get('print_row_col_headings', False)
                 self._set_row_col_headings(sheet, workbook.Name, print_headings)
+
+                # ========================================
+                # STEP 9: ENHANCED PREPARE FOR PRINT MODE
+                # Additional fixes for tables, images, and text in cells
+                # ========================================
+                if prepare_for_print:
+                    # Fix cell layout issues (empty cells causing text to hide)
+                    self._fix_cell_layout(sheet, workbook.Name)
+                    
+                    # Fit shapes/images to their containing cells (avoid overlap with text)
+                    self._fit_shapes_to_cells(sheet, workbook.Name)
+                    
+                    # Fix Excel Tables for printing
+                    self._fix_tables_for_print(sheet, workbook.Name)
+                    
+                    # Ensure all text is visible (wrapped, not shrunk too small)
+                    self._ensure_text_visible(sheet, workbook.Name)
+                    
+                    # Final row autofit after all fixes
+                    try:
+                        sheet.UsedRange.Rows.AutoFit()
+                    except:
+                        pass
+                    
+                    logging.info(f"[{workbook.Name}] {sheet.Name}: Enhanced prepare for print completed")
 
             except Exception as e:
                 logging.warning(f"Could not prepare sheet {sheet.Name}: {e}")
@@ -817,24 +1300,38 @@ class ExcelConverter:
         except Exception as e:
             logging.warning(f"Could not set row/column headings for {sheet.Name}: {e}")
 
-    def _print_to_pdf(self, workbook, output_path, printer_name):
+    def _export_to_pdf(self, workbook, output_path):
         """
-        NATIVE PRINT mode - use Excel's PrintOut to PDF virtual printer.
-        This preserves all original formatting.
+        Export workbook to PDF using ExportAsFixedFormat.
+        This is the reliable method that works without dialogs.
         """
-        logging.info(f"[{workbook.Name}] Using native print to: {printer_name}")
+        logging.info(f"[{workbook.Name}] Exporting to PDF: {output_path}")
         
         try:
-            # Print entire workbook to PDF
-            workbook.PrintOut(
-                ActivePrinter=printer_name,
-                PrintToFile=True,
-                PrToFileName=output_path,
-                Collate=True
+            # Ensure output path is absolute and properly formatted
+            output_path = str(Path(output_path).resolve())
+            
+            # Export to PDF using ExportAsFixedFormat
+            # IncludeDocProperties=True for RAG/AI Search metadata
+            workbook.ExportAsFixedFormat(
+                Type=xlTypePDF,
+                Filename=output_path,
+                Quality=xlQualityStandard,
+                IncludeDocProperties=True,
+                IgnorePrintAreas=False,
+                OpenAfterPublish=False
             )
-            logging.info(f"[{workbook.Name}] Native print completed: {output_path}")
+            
+            # Verify output file was created
+            if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
+                file_size = Path(output_path).stat().st_size
+                logging.info(f"[{workbook.Name}] PDF export completed: {output_path} ({file_size} bytes)")
+            else:
+                logging.error(f"[{workbook.Name}] PDF file was not created or is empty: {output_path}")
+                raise Exception(f"ExportAsFixedFormat did not create output file: {output_path}")
+                
         except Exception as e:
-            logging.error(f"Native print failed: {e}")
+            logging.error(f"PDF export failed: {e}")
             raise
 
     def _autofit_merged_cells(self, sheet, workbook_name):

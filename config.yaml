@@ -40,4 +40,10 @@ print_options:
     right: 1.78
     header: 0.76
     footer: 0.76
+  
+  # Header/Footer options
+  print_header_footer: true    # Enable/disable header and footer with sheet name and row range
+  
+  # Row and Column Headings (Excel row numbers on left, column letters on top)
+  print_row_col_headings: false  # Print Excel row numbers (1,2,3...) and column letters (A,B,C...)
 

@@ -8,8 +8,6 @@ import logging
 from .utils import ensure_dir
 
 # Excel Constants
-xlTypePDF = 0
-xlQualityStandard = 0
 xlLandscape = 2
 xlPortrait = 1
 
@@ -110,21 +108,9 @@ class ExcelConverter:
             # Ensure output directory exists
             ensure_dir(output_path)
             
-            # Native print mode uses PrintOut to virtual PDF printer
-            if print_mode == PRINT_MODE_NATIVE_PRINT:
-                printer_name = self.config.get('print_options', {}).get('native_printer', 'Microsoft Print to PDF')
-                self._print_to_pdf(workbook, output_path, printer_name)
-            else:
-                # Export to PDF using ExportAsFixedFormat
-                # IncludeDocProperties=True for RAG/AI Search metadata
-                workbook.ExportAsFixedFormat(
-                    Type=xlTypePDF,
-                    Filename=output_path,
-                    Quality=xlQualityStandard,
-                    IncludeDocProperties=True,
-                    IgnorePrintAreas=False,
-                    OpenAfterPublish=False
-                )
+            # Use native PrintOut to virtual PDF printer for all conversions
+            printer_name = self.config.get('print_options', {}).get('native_printer', 'Microsoft Print to PDF')
+            self._print_to_pdf(workbook, output_path, printer_name)
             
             return True
 
@@ -241,6 +227,23 @@ class ExcelConverter:
                 margins = print_options.get('margins', 'normal')
                 custom_margins = print_options.get('custom_margins', {})
                 self._apply_margins(sheet, workbook.Name, margins, custom_margins)
+
+                # ========================================
+                # STEP 7: SETUP HEADER AND FOOTER
+                # Add sheet name to header and row range to footer
+                # ========================================
+                if print_options.get('print_header_footer', True):
+                    self._setup_header_footer(sheet, workbook.Name)
+                else:
+                    # Clear any existing header/footer
+                    self._clear_header_footer(sheet, workbook.Name)
+
+                # ========================================
+                # STEP 8: ROW AND COLUMN HEADINGS
+                # Print Excel row numbers (1,2,3...) and column letters (A,B,C...)
+                # ========================================
+                print_headings = print_options.get('print_row_col_headings', False)
+                self._set_row_col_headings(sheet, workbook.Name, print_headings)
 
             except Exception as e:
                 logging.warning(f"Could not prepare sheet {sheet.Name}: {e}")
@@ -745,6 +748,74 @@ class ExcelConverter:
                 
             except Exception as e:
                 logging.warning(f"Could not apply uniform page size to sheet {sheet.Name}: {e}")
+
+    def _setup_header_footer(self, sheet, workbook_name):
+        """
+        Setup header and footer for the sheet.
+        Header: Sheet name
+        Footer: Row range (begin to end) for the current page
+        
+        Note: Only includes data from Excel file - no date/time.
+        
+        Excel Header/Footer codes:
+        &A - Sheet name
+        &P - Current page number
+        &N - Total pages
+        &F - File name
+        """
+        try:
+            # Get used range info for row tracking
+            used_range = sheet.UsedRange
+            start_row = used_range.Row
+            end_row = start_row + used_range.Rows.Count - 1
+            
+            # Clear all header/footer sections first (remove any date/time)
+            sheet.PageSetup.LeftHeader = ""
+            sheet.PageSetup.RightHeader = ""
+            sheet.PageSetup.LeftFooter = ""
+            sheet.PageSetup.RightFooter = ""
+            
+            # Center Header: Sheet name only
+            # Format: "Sheet: [SheetName]"
+            sheet.PageSetup.CenterHeader = f"&\"Arial,Bold\"Sheet: {sheet.Name}"
+            
+            # Center Footer: Row range and page information only (no date/time)
+            # Format: "Rows: [StartRow] - [EndRow] | Page X of Y"
+            sheet.PageSetup.CenterFooter = f"&\"Arial\"Rows: {start_row} - {end_row} | Page &P of &N"
+            
+            logging.info(f"[{workbook_name}] {sheet.Name}: Set header/footer (Rows {start_row}-{end_row})")
+            
+        except Exception as e:
+            logging.warning(f"Could not setup header/footer for {sheet.Name}: {e}")
+
+    def _clear_header_footer(self, sheet, workbook_name):
+        """
+        Clear all header and footer content from the sheet.
+        """
+        try:
+            sheet.PageSetup.LeftHeader = ""
+            sheet.PageSetup.CenterHeader = ""
+            sheet.PageSetup.RightHeader = ""
+            sheet.PageSetup.LeftFooter = ""
+            sheet.PageSetup.CenterFooter = ""
+            sheet.PageSetup.RightFooter = ""
+            logging.info(f"[{workbook_name}] {sheet.Name}: Cleared header/footer")
+        except Exception as e:
+            logging.warning(f"Could not clear header/footer for {sheet.Name}: {e}")
+
+    def _set_row_col_headings(self, sheet, workbook_name, enable):
+        """
+        Enable or disable printing of row numbers (1,2,3...) on left
+        and column letters (A,B,C...) on top of the printed page.
+        """
+        try:
+            sheet.PageSetup.PrintHeadings = enable
+            if enable:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Enabled row/column headings")
+            else:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Disabled row/column headings")
+        except Exception as e:
+            logging.warning(f"Could not set row/column headings for {sheet.Name}: {e}")
 
     def _print_to_pdf(self, workbook, output_path, printer_name):
         """

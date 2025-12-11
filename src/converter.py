@@ -535,9 +535,25 @@ class ExcelConverter:
         page_size = print_options.get('page_size', 'A4').upper()
         rows_per_page = print_options.get('rows_per_page')
 
-        # For native_print mode, skip optimization (preserve original formatting)
+        # For native_print mode, set basic PageSetup to preserve exact Excel dimensions
         if print_mode == PRINT_MODE_NATIVE_PRINT:
-            logging.info(f"[{workbook.Name}] Native print mode - skipping layout optimization")
+            logging.info(f"[{workbook.Name}] Native print mode - preserving exact Excel dimensions for RAG")
+            for sheet in workbook.Sheets:
+                try:
+                    # Set to no scaling - preserve exact dimensions (100% zoom)
+                    sheet.PageSetup.Zoom = 100
+                    sheet.PageSetup.FitToPagesWide = False
+                    sheet.PageSetup.FitToPagesTall = False
+                    
+                    # Clear print area to ensure entire sheet is printed
+                    try:
+                        sheet.PageSetup.PrintArea = ""
+                    except:
+                        pass
+                    
+                    logging.info(f"[{workbook.Name}] {sheet.Name}: Native print - exact dimensions preserved (no scaling)")
+                except Exception as e:
+                    logging.warning(f"Could not set native print mode for {sheet.Name}: {e}")
             return
 
         for sheet in workbook.Sheets:
@@ -578,6 +594,7 @@ class ExcelConverter:
                 # ========================================
                 # STEP 4: PRESERVE ORIGINAL DIMENSIONS (NO MODIFICATIONS)
                 # Keep original row heights and column widths from Excel file
+                # prepare_for_print only controls STEP 9 (dimension-modifying functions)
                 # ========================================
                 # DISABLED: Do not autofit rows or columns
                 # DISABLED: Do not modify merged cell heights
@@ -585,8 +602,9 @@ class ExcelConverter:
                 logging.info(f"[{workbook.Name}] {sheet.Name}: Preserving original row/column dimensions")
 
                 # ========================================
-                # STEP 5: APPLY SCALING
-                # Match Excel's print scaling options
+                # STEP 5: APPLY SCALING (ALWAYS APPLIED)
+                # Match Excel's print scaling options from config
+                # This controls how Excel fits content to pages during PDF export
                 # ========================================
                 scaling = print_options.get('scaling', 'fit_columns')
                 scaling_percent = print_options.get('scaling_percent', 100)
@@ -790,6 +808,8 @@ class ExcelConverter:
     def _apply_auto_mode(self, sheet, workbook_name):
         """
         Default AUTO mode - fit columns to page, auto orientation.
+        NOTE: This mode applies fitting which may alter dimensions.
+        For exact dimension preservation, use native_print mode instead.
         """
         try:
             total_width_pts = sheet.UsedRange.Width

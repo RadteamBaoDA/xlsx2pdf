@@ -2,3 +2,4 @@ pywin32
 rich
 pyyaml
 psutil
+langdetect

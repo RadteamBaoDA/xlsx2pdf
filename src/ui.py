@@ -69,7 +69,7 @@ def print_summary(total, success, error, skipped, error_files):
         for f in error_files:
             console.print(f"- {f}")
 
-def save_summary_report(total, success, error, skipped, error_files, output_file="summary_report.txt"):
+def save_summary_report(total, success, error, skipped, error_files, lang_distribution=None, output_file="summary_report.txt"):
     """Saves the summary report to a text file."""
     try:
         with open(output_file, "w", encoding="utf-8") as f:
@@ -81,6 +81,12 @@ def save_summary_report(total, success, error, skipped, error_files, output_file
             f.write(f"Errors      : {error}\n")
             f.write(f"Skipped     : {skipped}\n")
             f.write("-" * 40 + "\n")
+            
+            if lang_distribution:
+                f.write("\nLanguage Distribution:\n")
+                for lang, count in sorted(lang_distribution.items()):
+                    f.write(f"  {lang}: {count} files\n")
+                f.write("-" * 40 + "\n")
             
             if error_files:
                 f.write("\nError Files:\n")

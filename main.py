@@ -5,18 +5,31 @@ import time
 import psutil
 import traceback
 import logging
+from pathlib import Path
 from src.utils import load_config, get_output_path, ensure_dir, copy_to_enhanced
 from src.converter import ExcelConverter
 from src.logger import setup_logger, log_error, log_info, get_queue_logger
 from src.ui import create_progress_instance, create_layout, LogConsole, print_summary, print_banner, save_summary_report, Live
+from src.language_detector import LanguageDetector
 
-def convert_worker(input_path, output_path, config, pid_queue, log_queue):
+def convert_worker(input_path, output_path, config, pid_queue, log_queue, lang_code=None):
     """
     Worker function to run conversion in a separate process.
+    
+    Args:
+        input_path: Input Excel file path
+        output_path: Output PDF file path
+        config: Configuration dictionary
+        pid_queue: Queue for Excel process PID
+        log_queue: Queue for logging
+        lang_code: Detected language code (optional, for logging)
     """
     try:
         # Setup logging for worker to send to main process
         get_queue_logger(log_queue)
+        
+        if lang_code:
+            logging.info(f"[{Path(input_path).name}] Language: {lang_code}")
         
         converter = ExcelConverter(config)
         converter.convert(input_path, output_path, pid_queue)
@@ -125,11 +138,18 @@ def main():
     root_logger.addHandler(UIHandler(log_console))
 
     print_banner()
+    
+    # Initialize language detector
+    lang_detector = LanguageDetector(config)
+    if lang_detector.is_enabled():
+        log_info("Language classification enabled")
+        log_info(f"Mode: {lang_detector.mode}")
 
     success_count = 0
     error_count = 0
     skipped_count = 0
     error_files_list = []
+    lang_distribution = {}  # Track files by language
 
     timeout_minutes = config.get('timeout_minutes', 45)
     timeout_seconds = timeout_minutes * 60
@@ -158,7 +178,28 @@ def main():
                     progress.advance(task)
                     continue
 
-            output_path = get_output_path(input_path, input_root, output_root, config.get('output_suffix', '_x'))
+            # Language detection and classification
+            lang_code = 'other'
+            if lang_detector.is_enabled():
+                try:
+                    # For filename mode, detect before opening workbook
+                    if lang_detector.mode == 'filename':
+                        lang_code = lang_detector.classify_file(input_path)
+                        output_path = lang_detector.get_output_path(input_path, output_root, lang_code)
+                    else:
+                        # For auto mode, we need to detect from content (will be done in worker if needed)
+                        # For now, use filename as fallback
+                        lang_code = lang_detector.detect_language_from_filename(Path(input_path).stem)
+                        output_path = lang_detector.get_output_path(input_path, output_root, lang_code)
+                    
+                    # Track language distribution
+                    lang_distribution[lang_code] = lang_distribution.get(lang_code, 0) + 1
+                    
+                except Exception as e:
+                    log_error(input_path, f"Language detection failed: {e}")
+                    output_path = get_output_path(input_path, input_root, output_root, config.get('output_suffix', '_x'))
+            else:
+                output_path = get_output_path(input_path, input_root, output_root, config.get('output_suffix', '_x'))
             
             progress.update(task, description=f"[cyan]Processing: {os.path.basename(input_path)}")
             # Log separation
@@ -166,7 +207,7 @@ def main():
             
             pid_queue = multiprocessing.Queue()
             
-            p = multiprocessing.Process(target=convert_worker, args=(file_to_convert, output_path, config, pid_queue, log_queue))
+            p = multiprocessing.Process(target=convert_worker, args=(file_to_convert, output_path, config, pid_queue, log_queue, lang_code))
             p.start()
             
             start_time = time.time()
@@ -257,8 +298,14 @@ def main():
 
             progress.advance(task)
 
+    # Print language distribution if enabled
+    if lang_detector.is_enabled() and lang_distribution:
+        log_info("\n=== Language Distribution ===")
+        for lang, count in sorted(lang_distribution.items()):
+            log_info(f"{lang}: {count} files")
+    
     print_summary(total_files, success_count, error_count, skipped_count, error_files_list)
-    save_summary_report(total_files, success_count, error_count, skipped_count, error_files_list)
+    save_summary_report(total_files, success_count, error_count, skipped_count, error_files_list, lang_distribution if lang_detector.is_enabled() else None)
 
 if __name__ == "__main__":
     multiprocessing.freeze_support() 

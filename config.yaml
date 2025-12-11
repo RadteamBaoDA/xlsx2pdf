@@ -47,3 +47,19 @@ print_options:
   # Row and Column Headings (Excel row numbers on left, column letters on top)
   print_row_col_headings: false  # Print Excel row numbers (1,2,3...) and column letters (A,B,C...)
 
+# Language classification and distribution
+language_classification:
+  enabled: false              # Enable/disable language classification
+  mode: "auto"                # Mode: "auto" (detect from content) or "filename" (classify by filename pattern)
+  
+  # Filename patterns for classification (when mode: filename)
+  # Format: language_code: [list of patterns to match in filename]
+  filename_patterns:
+    vi: ["_VN"]              # Vietnamese
+    en: ["_EN", "_t"]        # English
+    ja: ["_Ja", ""]          # Japanese (empty string matches files without language suffix)
+  
+  # Output folder structure
+  output_suffix_format: "output-{lang}"  # Format for language-specific folders. {lang} will be replaced with language code
+  keep_folder_structure: true             # Keep input folder structure in output folders
+

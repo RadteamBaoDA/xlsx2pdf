@@ -14,24 +14,55 @@ logging:
   log_console_lines: 20   # Number of lines to show in UI console
 
 # Print options for PDF conversion per sheet
+# Supports multiple configurations - list format applies different settings to different sheets
+# Priority: Lower number = higher priority (1 is highest). When sheet matches multiple configs, highest priority wins
+# sheets: List of sheet names to apply this config to. If omitted or null, applies to all unmatched sheets (default config)
 # Modes: auto, one_page, table_row_break, auto_page_size, native_print, uniform_page_size
 #   - uniform_page_size: scans all sheets, finds largest width, applies that page size to ALL sheets
 #   - native_print: preserves exact Excel dimensions without any scaling or fitting (best for RAG)
+
+# Multiple print_options example (comment out to use single config below):
+# print_options:
+#   - sheets: ['Summary', 'Dashboard']  # Apply these settings to Summary and Dashboard sheets
+#     priority: 1                        # Highest priority
+#     mode: "one_page"
+#     scaling: "fit_sheet"
+#     margins: "narrow"
+#     print_header_footer: false
+#     print_row_col_headings: false
+#   - sheets: ['DataSheet1', 'DataSheet2']
+#     priority: 2
+#     mode: "auto"
+#     scaling: "fit_columns"
+#     margins: "normal"
+#     print_header_footer: true
+#     print_row_col_headings: false
+#   - sheets: null                       # Default config for all other sheets (no sheets specified)
+#     priority: 99                       # Lowest priority (default fallback)
+#     mode: "auto"
+#     scaling: "fit_columns"
+#     margins: "normal"
+#     print_header_footer: true
+#     print_row_col_headings: false
+
+# Single print_options (applies to all sheets):
 print_options:
-  mode: "auto"            # Default print mode with scaling applied
-  page_size: "auto"       # auto, letter, tabloid, legal, statement, executive, A1, A2, A3, A4, A5, B4, B5
-  rows_per_page: null     # Fixed rows per page for table_row_break (null = auto-detect tables)
+  sheets: null              # null or omit this key = applies to all sheets
+  priority: 1               # Priority (only matters when using multiple configs)
+  mode: "auto"              # Default print mode with scaling applied
+  page_size: "auto"         # auto, letter, tabloid, legal, statement, executive, A1, A2, A3, A4, A5, B4, B5
+  rows_per_page: null       # Fixed rows per page for table_row_break (null = auto-detect tables)
   native_printer: "Microsoft Print to PDF"  # Printer name for native_print mode
   
   # Scaling options (same as Excel's print scaling)
   # Options: no_scaling, fit_sheet, fit_columns, fit_rows, custom
   # IMPORTANT: Use "no_scaling" to preserve original Excel dimensions exactly
-  scaling: "fit_columns"   # Preserve original Excel layout (100% zoom)
-  scaling_percent: 100    # Custom scaling percentage (1-400), used when scaling: custom
+  scaling: "fit_columns"    # Preserve original Excel layout (100% zoom)
+  scaling_percent: 100      # Custom scaling percentage (1-400), used when scaling: custom
   
   # Margin options (same as Excel's print margins)
   # Options: normal, wide, narrow, custom
-  margins: "normal"       # Default: normal margins
+  margins: "normal"         # Default: normal margins
   # Custom margin values in cm (used when margins: custom)
   custom_margins:
     top: 1.91
@@ -42,10 +73,9 @@ print_options:
     footer: 0.76
   
   # Header/Footer options
-  print_header_footer: true    # Enable/disable header and footer with sheet name and row range
-  
+  print_header_footer: true     # Enable/disable header and footer with sheet name and row range
   # Row and Column Headings (Excel row numbers on left, column letters on top)
-  print_row_col_headings: false  # Print Excel row numbers (1,2,3...) and column letters (A,B,C...)
+  print_row_col_headings: false # Print Excel row numbers (1,2,3...) and column letters (A,B,C...)
 
 # Language classification and distribution
 language_classification:

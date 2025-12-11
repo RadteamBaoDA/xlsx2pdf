@@ -257,15 +257,55 @@ class ExcelConverter:
         """
         logging.info(f"[{workbook_name}] {sheet.Name}: Preserving original column widths")
 
+    def _get_sheet_print_options(self, sheet_name):
+        """
+        Get the appropriate print_options for a specific sheet based on sheet name matching.
+        Supports both single print_options dict and list of print_options with priority.
+        Returns the matched print_options dict.
+        """
+        print_options_config = self.config.get('print_options', {})
+        
+        # Handle backward compatibility: single dict format
+        if isinstance(print_options_config, dict):
+            return print_options_config
+        
+        # Handle list format: multiple print_options with sheet matching
+        if isinstance(print_options_config, list):
+            matched_configs = []
+            
+            for config in print_options_config:
+                sheets = config.get('sheets', None)
+                priority = config.get('priority', 999)
+                
+                # If sheets is None or empty, it's a default config (matches all)
+                if sheets is None or sheets == []:
+                    matched_configs.append((priority, config))
+                # If sheet name matches any in the list
+                elif isinstance(sheets, list) and sheet_name in sheets:
+                    matched_configs.append((priority, config))
+            
+            # Sort by priority (lower number = higher priority)
+            if matched_configs:
+                matched_configs.sort(key=lambda x: x[0])
+                return matched_configs[0][1]  # Return highest priority config
+        
+        # Fallback: return default config
+        return {
+            'mode': 'auto',
+            'page_size': 'auto',
+            'scaling': 'fit_columns',
+            'scaling_percent': 100,
+            'margins': 'normal',
+            'print_header_footer': True,
+            'print_row_col_headings': False
+        }
+
     def _optimize_layout(self, workbook, print_mode=PRINT_MODE_AUTO):
         """
         Prepares workbook for print - merged logic from optimize_layout and enhance_layout.
         Ensures no content is hidden: expands collapsed groups, fixes row heights, fixes images.
         """
         prepare_for_print = self.config.get('excel', {}).get('prepare_for_print', True)
-        print_options = self.config.get('print_options', {})
-        page_size = print_options.get('page_size', 'A4').upper()
-        rows_per_page = print_options.get('rows_per_page')
 
         # For native_print mode, set basic PageSetup to preserve exact Excel dimensions
         if print_mode == PRINT_MODE_NATIVE_PRINT:
@@ -292,6 +332,14 @@ class ExcelConverter:
             try:
                 logging.info(f"[{workbook.Name}] Processing Sheet: {sheet.Name}")
                 
+                # Get sheet-specific print_options (supports multiple configs with sheet matching)
+                print_options = self._get_sheet_print_options(sheet.Name)
+                sheet_print_mode = print_options.get('mode', print_mode)
+                page_size = print_options.get('page_size', 'A4').upper()
+                rows_per_page = print_options.get('rows_per_page')
+                
+                logging.info(f"[{workbook.Name}] {sheet.Name}: Using print mode '{sheet_print_mode}' (priority-based config)")
+                
                 # ========================================
                 # STEP 1: EXPAND ALL HIDDEN CONTENT (ALWAYS)
                 # Critical for ExportAsFixedFormat - must show all content
@@ -309,13 +357,13 @@ class ExcelConverter:
                 # ========================================
                 # STEP 3: PRINT MODE SPECIFIC SETUP
                 # ========================================
-                if print_mode == PRINT_MODE_ONE_PAGE:
+                if sheet_print_mode == PRINT_MODE_ONE_PAGE:
                     self._apply_one_page_mode(sheet, workbook.Name)
-                elif print_mode == PRINT_MODE_TABLE_ROW_BREAK:
+                elif sheet_print_mode == PRINT_MODE_TABLE_ROW_BREAK:
                     self._apply_table_row_break_mode(sheet, workbook.Name, rows_per_page)
-                elif print_mode == PRINT_MODE_AUTO_PAGE_SIZE:
+                elif sheet_print_mode == PRINT_MODE_AUTO_PAGE_SIZE:
                     self._apply_auto_page_size_mode(sheet, workbook.Name, page_size)
-                elif print_mode == PRINT_MODE_UNIFORM_PAGE_SIZE:
+                elif sheet_print_mode == PRINT_MODE_UNIFORM_PAGE_SIZE:
                     # Uniform page size is handled at workbook level, not per-sheet
                     # Skip here - will be applied after all sheets are processed
                     pass

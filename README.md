@@ -1,91 +1,105 @@
 # xlsx2pdf
 
-Excel to PDF converter with advanced features including language classification and distribution.
+Professional Excel to PDF converter with advanced layout control, multi-sheet configuration, and language classification.
 
-## Features
+## Key Features
 
-- Convert Excel files (.xls, .xlsx, .xlsm) to PDF
-- Multiple print modes (auto, one_page, table_row_break, etc.)
-- Custom headers and footers with sheet name and row range
-- **Language classification and automatic distribution**
-- Preserves folder structure in output
-- Batch processing with progress tracking
+- 🔄 **Batch Processing** - Convert multiple Excel files in one run
+- 🎯 **Sheet-Specific Configuration** - Different settings for different sheets with priority system
+- 📏 **Layout Preservation** - Maintains exact Excel dimensions (row heights, column widths)
+- 📄 **Page Break Control** - Automatic page breaks by rows/columns
+- 🌍 **Language Classification** - Auto-detect and distribute files by language
+- 🎨 **Flexible Scaling** - Multiple scaling modes (fit_columns, fit_sheet, no_scaling, etc.)
+- 📊 **Custom Margins & Headers** - Full control over PDF layout
 
-## Language Classification
+## Quick Start
 
-The converter can automatically classify and distribute PDF files based on language:
-
-### Configuration
-
-Edit `config.yaml`:
-
-```yaml
-language_classification:
-  enabled: true              # Enable/disable language classification
-  mode: "auto"               # Mode: "auto" or "filename"
-  
-  # Filename patterns (when mode: filename)
-  filename_patterns:
-    vi: ["_VN"]              # Vietnamese
-    en: ["_EN", "_t"]        # English
-    ja: ["_Ja", ""]          # Japanese
-  
-  output_suffix_format: "output-{lang}"  # Output folder format
-  keep_folder_structure: true            # Maintain input folder structure
-```
-
-### Modes
-
-1. **Auto Mode** (`mode: "auto"`)
-   - Detects language from cell content using langdetect library
-   - Analyzes text in all sheets
-   - Automatically distributes files to `output-<lang>` folders
-   - Supported languages: vi, en, ja, zh, ko, th, fr, de, es
-
-2. **Filename Mode** (`mode: "filename"`)
-   - Classifies based on filename patterns
-   - Example: `Report_VN.xlsx` → `output-vi/`
-   - Example: `Data_EN.xlsx` → `output-en/`
-   - Example: `Info_Ja.xlsx` → `output-ja/`
-   - Files without pattern → `output/` (default)
-
-### Output Structure
-
-With `keep_folder_structure: true`:
-```
-input/
-  ├── folder1/
-  │   ├── file_VN.xlsx
-  │   └── file_EN.xlsx
-  └── folder2/
-      └── file_Ja.xlsx
-
-output-vi/
-  └── folder1/
-      └── file_VN_x.pdf
-
-output-en/
-  └── folder1/
-      └── file_EN_x.pdf
-
-output-ja/
-  └── folder2/
-      └── file_Ja_x.pdf
-```
-
-## Installation
+### 1. Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-For language detection support:
-```bash
-pip install langdetect
+### 2. Setup Input Files
+
+Place Excel files in the `input/` folder:
+```
+input/
+  ├── report1.xlsx
+  ├── data.xlsx
+  └── subfolder/
+      └── sheet.xlsx
 ```
 
-## Usage
+### 3. Configure (Optional)
+
+Edit `config.yaml` to customize settings. See [Configuration Guide](docs/configuration.md) for details.
+
+### 4. Run
 
 ```bash
 python main.py
 ```
+
+Output PDFs will be in `output/` folder with `_x` suffix by default.
+
+## Core Capabilities
+
+### Multi-Sheet Configuration
+Apply different print settings to different sheets based on sheet name matching:
+- **Priority-based**: Lower priority number wins when sheet matches multiple configs
+- **Sheet targeting**: Specify exact sheet names or use default config
+- **Independent settings**: Each config has its own scaling, margins, page breaks
+
+### Layout Control
+- **Dimension preservation**: Keep original Excel cell dimensions (prepare_for_print: false)
+- **Scaling modes**: no_scaling, fit_columns, fit_rows, fit_sheet, custom
+- **Page breaks**: Automatic row/column-based pagination
+- **Margins**: Normal, wide, narrow, or custom margins
+
+### Language Classification
+Automatically detect language and distribute files:
+- **Auto mode**: Detects from cell content (vi, en, ja, zh, etc.)
+- **Filename mode**: Classifies by filename patterns (_VN, _EN, _Ja)
+- **Output organization**: Separate folders per language
+
+## Documentation
+
+- 📖 [Configuration Guide](docs/configuration.md) - Detailed config.yaml reference
+- 🚀 [Quick Setup Guide](docs/quick-setup.md) - Step-by-step setup instructions
+- 🏗️ [Architecture](docs/architecture.md) - Design and system overview
+
+## Common Use Cases
+
+**1. RAG/AI Document Processing**
+```yaml
+excel:
+  prepare_for_print: false  # Preserve exact dimensions
+print_options:
+  scaling: "no_scaling"     # No modification
+```
+
+**2. Professional Reports**
+```yaml
+print_options:
+  scaling: "fit_columns"
+  margins: "normal"
+  print_header_footer: true
+```
+
+**3. Large Data Sheets**
+```yaml
+print_options:
+  rows_per_page: 100        # Page break every 100 rows
+  columns_per_page: 15      # Page break every 15 columns
+```
+
+## Requirements
+
+- Python 3.7+
+- Windows OS (uses win32com for Excel automation)
+- Microsoft Excel installed
+
+## License
+
+See LICENSE file for details.

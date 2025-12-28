@@ -102,7 +102,9 @@ class ExcelConverter:
                 raise e
 
             # Optimize Layout and apply print mode
-            print_mode = self.config.get('print_options', {}).get('mode', PRINT_MODE_AUTO)
+            # Get default print mode from first sheet's config (handles both dict and list formats)
+            default_print_options = self._get_sheet_print_options("")  # Empty string to get default config
+            print_mode = default_print_options.get('mode', PRINT_MODE_AUTO)
             logging.info(f"[{workbook.Name}] Using print mode: {print_mode}")
             
             self._optimize_layout(workbook, print_mode)

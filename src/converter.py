@@ -303,6 +303,133 @@ class ExcelConverter:
         except Exception as e:
             logging.warning(f"Could not fix tables in {sheet.Name}: {e}")
 
+    def _adjust_usedrange_for_images(self, sheet, workbook_name):
+        """
+        Enhance the effective UsedRange/PrintArea by checking for columns where the
+        header contains the word 'image' (case-insensitive) and the column contains
+        data or is used by a shape. If such columns extend beyond the current
+        UsedRange end column, expand the PrintArea to include them.
+        """
+        try:
+            used = sheet.UsedRange
+            start_row = used.Row
+            start_col = used.Column
+            used_rows = used.Rows.Count
+            used_cols = used.Columns.Count
+            last_col = start_col + used_cols - 1
+
+            # Look for image columns in header row(s). Prefer the UsedRange header row,
+            # but also check the first worksheet row if different.
+            header_rows = [start_row]
+            if start_row != 1:
+                header_rows.append(1)
+
+            candidate_cols = []
+
+            for col in range(start_col, last_col + 1):
+                try:
+                    header_text = None
+                    for hr in header_rows:
+                        try:
+                            hv = sheet.Cells(hr, col).Value
+                            if hv is not None and str(hv).strip() != "":
+                                header_text = str(hv)
+                                break
+                        except:
+                            continue
+                    if not header_text:
+                        continue
+
+                    if 'image' not in header_text.lower():
+                        continue
+
+                    # Check if any cell in the column (below header) has a value
+                    has_value = False
+                    for r in range(start_row + 1, start_row + used_rows):
+                        try:
+                            v = sheet.Cells(r, col).Value
+                            if v is not None and str(v).strip() != "":
+                                has_value = True
+                                break
+                        except:
+                            continue
+
+                    # Also check if any shape anchors into this column
+                    if not has_value:
+                        try:
+                            for shape in sheet.Shapes:
+                                try:
+                                    tl = shape.TopLeftCell
+                                    br = shape.BottomRightCell
+                                    if tl and br:
+                                        if int(tl.Column) <= col <= int(br.Column):
+                                            has_value = True
+                                            break
+                                except:
+                                    continue
+                        except:
+                            pass
+
+                    if has_value:
+                        candidate_cols.append(col)
+                except Exception:
+                    continue
+
+            # Also consider shapes that may be anchored past the UsedRange end
+            try:
+                for shape in sheet.Shapes:
+                    try:
+                        tl = shape.TopLeftCell
+                        br = shape.BottomRightCell
+                        if tl and br:
+                            # add the rightmost column occupied by the shape
+                            candidate_cols.append(int(br.Column))
+                    except:
+                        continue
+            except:
+                pass
+
+            # Also scan a small margin right of UsedRange for any non-empty cells
+            try:
+                max_scan = last_col + 20
+                for col in range(last_col + 1, max_scan + 1):
+                    try:
+                        found = False
+                        for r in range(start_row, start_row + used_rows):
+                            try:
+                                v = sheet.Cells(r, col).Value
+                                if v is not None and str(v).strip() != "":
+                                    candidate_cols.append(col)
+                                    found = True
+                                    break
+                            except:
+                                continue
+                        if found:
+                            continue
+                    except:
+                        continue
+            except:
+                pass
+
+            # Determine new last column
+            if candidate_cols:
+                candidate_max = max(candidate_cols)
+                new_last_col = max(last_col, candidate_max)
+            else:
+                new_last_col = last_col
+
+            # Update PrintArea if expanded
+            try:
+                rng = sheet.Range(sheet.Cells(start_row, start_col), sheet.Cells(start_row + used_rows - 1, new_last_col))
+                addr = rng.Address
+                sheet.PageSetup.PrintArea = addr
+                logging.info(f"[{workbook_name}] {sheet.Name}: Enhanced PrintArea set to {addr} based on image columns: {candidate_cols}")
+            except Exception as e:
+                logging.warning(f"[{workbook_name}] {sheet.Name}: Could not set enhanced PrintArea: {e}")
+
+        except Exception as e:
+            logging.warning(f"[{workbook_name}] {sheet.Name}: Error adjusting UsedRange for images: {e}")
+
     def _ensure_text_visible(self, sheet, workbook_name):
         """
         DISABLED: Preserves original Excel text formatting and cell dimensions.
@@ -417,9 +544,13 @@ class ExcelConverter:
                     
                     # Set print area to used range only (removes white space)
                     try:
-                        sheet.PageSetup.PrintArea = sheet.UsedRange.Address
-                    except:
-                        pass
+                        # Prefer enhanced computation that includes image columns when present
+                        self._adjust_usedrange_for_images(sheet, workbook.Name)
+                    except Exception:
+                        try:
+                            sheet.PageSetup.PrintArea = sheet.UsedRange.Address
+                        except:
+                            pass
                     
                     logging.info(f"[{workbook.Name}] {sheet.Name}: Native print - exact dimensions preserved (no scaling)")
                 except Exception as e:
@@ -728,9 +859,13 @@ class ExcelConverter:
         
         # Set print area to used range only (removes white space)
         try:
-            sheet.PageSetup.PrintArea = sheet.UsedRange.Address
-        except:
-            pass
+            # Prefer enhanced computation that includes image columns when present
+            self._adjust_usedrange_for_images(sheet, workbook_name)
+        except Exception:
+            try:
+                sheet.PageSetup.PrintArea = sheet.UsedRange.Address
+            except:
+                pass
 
     def _apply_one_page_mode(self, sheet, workbook_name, orientation='auto', page_size='auto'):
         """
@@ -761,9 +896,13 @@ class ExcelConverter:
         
         # Set print area to used range only (removes white space)
         try:
-            sheet.PageSetup.PrintArea = sheet.UsedRange.Address
-        except:
-            pass
+            # Prefer enhanced computation that includes image columns when present
+            self._adjust_usedrange_for_images(sheet, workbook_name)
+        except Exception:
+            try:
+                sheet.PageSetup.PrintArea = sheet.UsedRange.Address
+            except:
+                pass
 
     def _apply_table_row_break_mode(self, sheet, workbook_name, rows_per_page=None, orientation='auto', page_size='auto'):
         """
@@ -1161,9 +1300,13 @@ class ExcelConverter:
                 
                 # Set print area to used range only (removes white space)
                 try:
-                    sheet.PageSetup.PrintArea = sheet.UsedRange.Address
-                except:
-                    pass
+                    # Prefer enhanced computation that includes image columns when present
+                    self._adjust_usedrange_for_images(sheet, workbook_name)
+                except Exception:
+                    try:
+                        sheet.PageSetup.PrintArea = sheet.UsedRange.Address
+                    except:
+                        pass
                 
                 # Clear existing page breaks
                 try:

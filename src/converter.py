@@ -14,18 +14,52 @@ xlLandscape = 2
 xlPortrait = 1
 
 # Paper Size Constants (Excel xlPaperSize enumeration)
+# All paper sizes supported by Microsoft Print to PDF
 xlPaperLetter = 1       # 21.59 x 27.94 cm (8.5 x 11 in)
+xlPaperLetterSmall = 2  # 21.59 x 27.94 cm (8.5 x 11 in) - Small margins
 xlPaperTabloid = 3      # 27.94 x 43.18 cm (11 x 17 in)
+xlPaperLedger = 4       # 43.18 x 27.94 cm (17 x 11 in)
 xlPaperLegal = 5        # 21.59 x 35.56 cm (8.5 x 14 in)
 xlPaperStatement = 6    # 13.97 x 21.59 cm (5.5 x 8.5 in)
 xlPaperExecutive = 7    # 18.41 x 26.67 cm (7.25 x 10.5 in)
 xlPaperA3 = 8           # 29.7 x 42 cm
 xlPaperA4 = 9           # 21 x 29.7 cm
+xlPaperA4Small = 10     # 21 x 29.7 cm - Small margins
 xlPaperA5 = 11          # 14.8 x 21 cm
 xlPaperB4 = 12          # 25.7 x 36.4 cm (JIS)
 xlPaperB5 = 13          # 18.2 x 25.7 cm (JIS)
-xlPaperA2 = 66          # 42 x 59.4 cm (based on extended paper size constants)
-xlPaperA1 = 67          # 59.4 x 84.1 cm (based on extended paper size constants)
+xlPaperFolio = 14       # 21.59 x 33.02 cm (8.5 x 13 in)
+xlPaperQuarto = 15      # 21.59 x 27.43 cm (8.47 x 10.8 in)
+xlPaper10x14 = 16       # 25.4 x 35.56 cm (10 x 14 in)
+xlPaper11x17 = 17       # 27.94 x 43.18 cm (11 x 17 in)
+xlPaperNote = 18        # 21.59 x 27.94 cm (8.5 x 11 in)
+xlPaperEnvelope9 = 19   # 9.84 x 22.54 cm (3.875 x 8.875 in)
+xlPaperEnvelope10 = 20  # 10.48 x 24.13 cm (4.125 x 9.5 in)
+xlPaperEnvelope11 = 21  # 11.43 x 26.35 cm (4.5 x 10.375 in)
+xlPaperEnvelope12 = 22  # 12.07 x 27.94 cm (4.75 x 11 in)
+xlPaperEnvelope14 = 23  # 12.7 x 29.21 cm (5 x 11.5 in)
+xlPaperCSheet = 24      # 43.18 x 55.88 cm (17 x 22 in)
+xlPaperDSheet = 25      # 55.88 x 86.36 cm (22 x 34 in)
+xlPaperESheet = 26      # 86.36 x 111.76 cm (34 x 44 in)
+xlPaperEnvelopeDL = 27  # 11 x 22 cm (DL Envelope)
+xlPaperEnvelopeC5 = 28  # 16.2 x 22.9 cm (C5 Envelope)
+xlPaperEnvelopeC3 = 29  # 32.4 x 45.8 cm (C3 Envelope)
+xlPaperEnvelopeC4 = 30  # 22.9 x 32.4 cm (C4 Envelope)
+xlPaperEnvelopeC6 = 31  # 11.4 x 16.2 cm (C6 Envelope)
+xlPaperEnvelopeC65 = 32 # 11.4 x 22.9 cm (C65 Envelope)
+xlPaperEnvelopeB4 = 33  # 25 x 35.3 cm (B4 Envelope)
+xlPaperEnvelopeB5 = 34  # 17.6 x 25 cm (B5 Envelope)
+xlPaperEnvelopeB6 = 35  # 17.6 x 12.5 cm (B6 Envelope)
+xlPaperEnvelopeItaly = 36  # 11 x 23 cm (Italy Envelope)
+xlPaperEnvelopeMonarch = 37  # 9.84 x 19.05 cm (3.875 x 7.5 in)
+xlPaperEnvelopePersonal = 38  # 9.21 x 16.51 cm (3.625 x 6.5 in)
+xlPaperFanfoldUS = 39   # 37.83 x 27.94 cm (14.875 x 11 in)
+xlPaperFanfoldStdGerman = 40  # 21.59 x 30.48 cm (8.5 x 12 in)
+xlPaperFanfoldLegalGerman = 41  # 21.59 x 33.02 cm (8.5 x 13 in)
+xlPaperUser = 256       # User-defined
+xlPaperA6 = 70          # 10.5 x 14.8 cm
+xlPaperA2 = 66          # 42 x 59.4 cm
+xlPaperA1 = 67          # 59.4 x 84.1 cm
 
 # Print Mode Constants
 PRINT_MODE_AUTO = "auto"
@@ -37,19 +71,45 @@ PRINT_MODE_UNIFORM_PAGE_SIZE = "uniform_page_size"
 
 # Page sizes in points (1 inch = 72 points, 1 cm = 28.35 points)
 # These are printable area estimates (minus typical margins)
+# All paper sizes supported by Microsoft Print to PDF
 PAGE_SIZES = {
     "LETTER": {"width": 612, "height": 792, "printable_height": 700, "xl_const": xlPaperLetter},
+    "LETTER_SMALL": {"width": 612, "height": 792, "printable_height": 700, "xl_const": xlPaperLetterSmall},
     "TABLOID": {"width": 792, "height": 1224, "printable_height": 1130, "xl_const": xlPaperTabloid},
+    "LEDGER": {"width": 1224, "height": 792, "printable_height": 700, "xl_const": xlPaperLedger},
     "LEGAL": {"width": 612, "height": 1008, "printable_height": 915, "xl_const": xlPaperLegal},
     "STATEMENT": {"width": 396, "height": 612, "printable_height": 520, "xl_const": xlPaperStatement},
     "EXECUTIVE": {"width": 522, "height": 756, "printable_height": 665, "xl_const": xlPaperExecutive},
+    "FOLIO": {"width": 612, "height": 936, "printable_height": 845, "xl_const": xlPaperFolio},
+    "QUARTO": {"width": 610, "height": 780, "printable_height": 690, "xl_const": xlPaperQuarto},
+    "10X14": {"width": 720, "height": 1008, "printable_height": 915, "xl_const": xlPaper10x14},
+    "11X17": {"width": 792, "height": 1224, "printable_height": 1130, "xl_const": xlPaper11x17},
+    "NOTE": {"width": 612, "height": 792, "printable_height": 700, "xl_const": xlPaperNote},
+    "ENVELOPE_9": {"width": 279, "height": 639, "printable_height": 550, "xl_const": xlPaperEnvelope9},
+    "ENVELOPE_10": {"width": 297, "height": 684, "printable_height": 595, "xl_const": xlPaperEnvelope10},
+    "ENVELOPE_11": {"width": 324, "height": 747, "printable_height": 660, "xl_const": xlPaperEnvelope11},
+    "ENVELOPE_12": {"width": 342, "height": 792, "printable_height": 700, "xl_const": xlPaperEnvelope12},
+    "ENVELOPE_14": {"width": 360, "height": 828, "printable_height": 735, "xl_const": xlPaperEnvelope14},
+    "ENVELOPE_DL": {"width": 312, "height": 624, "printable_height": 535, "xl_const": xlPaperEnvelopeDL},
+    "ENVELOPE_C3": {"width": 918, "height": 1296, "printable_height": 1205, "xl_const": xlPaperEnvelopeC3},
+    "ENVELOPE_C4": {"width": 649, "height": 918, "printable_height": 830, "xl_const": xlPaperEnvelopeC4},
+    "ENVELOPE_C5": {"width": 459, "height": 649, "printable_height": 560, "xl_const": xlPaperEnvelopeC5},
+    "ENVELOPE_C6": {"width": 323, "height": 459, "printable_height": 370, "xl_const": xlPaperEnvelopeC6},
+    "ENVELOPE_C65": {"width": 323, "height": 649, "printable_height": 560, "xl_const": xlPaperEnvelopeC65},
+    "ENVELOPE_B4": {"width": 709, "height": 1001, "printable_height": 910, "xl_const": xlPaperEnvelopeB4},
+    "ENVELOPE_B5": {"width": 499, "height": 709, "printable_height": 620, "xl_const": xlPaperEnvelopeB5},
+    "ENVELOPE_B6": {"width": 354, "height": 499, "printable_height": 410, "xl_const": xlPaperEnvelopeB6},
+    "ENVELOPE_MONARCH": {"width": 279, "height": 540, "printable_height": 450, "xl_const": xlPaperEnvelopeMonarch},
     "A1": {"width": 1684, "height": 2384, "printable_height": 2290, "xl_const": xlPaperA1},
     "A2": {"width": 1191, "height": 1684, "printable_height": 1590, "xl_const": xlPaperA2},
     "A3": {"width": 842, "height": 1191, "printable_height": 1100, "xl_const": xlPaperA3},
     "A4": {"width": 595, "height": 842, "printable_height": 750, "xl_const": xlPaperA4},
+    "A4_SMALL": {"width": 595, "height": 842, "printable_height": 750, "xl_const": xlPaperA4Small},
     "A5": {"width": 420, "height": 595, "printable_height": 505, "xl_const": xlPaperA5},
+    "A6": {"width": 298, "height": 420, "printable_height": 330, "xl_const": xlPaperA6},
     "B4": {"width": 729, "height": 1032, "printable_height": 940, "xl_const": xlPaperB4},
-    "B5": {"width": 516, "height": 729, "printable_height": 640, "xl_const": xlPaperB5}
+    "B5": {"width": 516, "height": 729, "printable_height": 640, "xl_const": xlPaperB5},
+    "B6": {"width": 363, "height": 516, "printable_height": 425, "xl_const": xlPaperEnvelopeB6}
 }
 
 class ExcelConverter:
@@ -295,6 +355,7 @@ class ExcelConverter:
         return {
             'mode': 'auto',
             'page_size': 'auto',
+            'orientation': 'auto',
             'scaling': 'fit_columns',
             'scaling_percent': 100,
             'margins': 'normal',
@@ -302,12 +363,42 @@ class ExcelConverter:
             'print_row_col_headings': False
         }
 
+    def _determine_orientation(self, sheet, orientation_setting):
+        """
+        Determine the appropriate page orientation based on content and config.
+        
+        Args:
+            sheet: Excel sheet object
+            orientation_setting: Config value ('auto', 'portrait', or 'landscape')
+        
+        Returns:
+            xlPortrait (1) or xlLandscape (2)
+        """
+        orientation_setting = str(orientation_setting).lower() if orientation_setting else 'auto'
+        
+        # Forced orientations
+        if orientation_setting == 'portrait':
+            return xlPortrait
+        elif orientation_setting == 'landscape':
+            return xlLandscape
+        
+        # Auto-detect based on content dimensions
+        try:
+            total_width_pts = sheet.UsedRange.Width
+            total_height_pts = sheet.UsedRange.Height
+            
+            if total_width_pts > total_height_pts:
+                return xlLandscape  # Wide content -> Landscape
+            else:
+                return xlPortrait   # Tall/Square content -> Portrait
+        except:
+            return xlPortrait  # Default to portrait if dimensions can't be read
+
     def _optimize_layout(self, workbook, print_mode=PRINT_MODE_AUTO):
         """
         Prepares workbook for print - merged logic from optimize_layout and enhance_layout.
         Ensures no content is hidden: expands collapsed groups, fixes row heights, fixes images.
         """
-        prepare_for_print = self.config.get('excel', {}).get('prepare_for_print', True)
 
         # For native_print mode, set basic PageSetup to preserve exact Excel dimensions
         if print_mode == PRINT_MODE_NATIVE_PRINT:
@@ -339,6 +430,7 @@ class ExcelConverter:
                 sheet_print_mode = print_options.get('mode', print_mode)
                 page_size = print_options.get('page_size', 'A4').upper()
                 rows_per_page = print_options.get('rows_per_page')
+                orientation = print_options.get('orientation', 'auto')
                 
                 logging.info(f"[{workbook.Name}] {sheet.Name}: Using print mode '{sheet_print_mode}' (priority-based config)")
                 
@@ -360,27 +452,23 @@ class ExcelConverter:
                 # STEP 3: PRINT MODE SPECIFIC SETUP
                 # ========================================
                 if sheet_print_mode == PRINT_MODE_ONE_PAGE:
-                    self._apply_one_page_mode(sheet, workbook.Name)
+                    self._apply_one_page_mode(sheet, workbook.Name, orientation)
                 elif sheet_print_mode == PRINT_MODE_TABLE_ROW_BREAK:
-                    self._apply_table_row_break_mode(sheet, workbook.Name, rows_per_page)
+                    self._apply_table_row_break_mode(sheet, workbook.Name, rows_per_page, orientation)
                 elif sheet_print_mode == PRINT_MODE_AUTO_PAGE_SIZE:
-                    self._apply_auto_page_size_mode(sheet, workbook.Name, page_size)
+                    self._apply_auto_page_size_mode(sheet, workbook.Name, page_size, orientation)
                 elif sheet_print_mode == PRINT_MODE_UNIFORM_PAGE_SIZE:
                     # Uniform page size is handled at workbook level, not per-sheet
                     # Skip here - will be applied after all sheets are processed
                     pass
-                elif prepare_for_print:
+                else:
                     # Default AUTO mode
-                    self._apply_auto_mode(sheet, workbook.Name)
+                    self._apply_auto_mode(sheet, workbook.Name, orientation)
 
                 # ========================================
                 # STEP 4: PRESERVE ORIGINAL DIMENSIONS (NO MODIFICATIONS)
                 # Keep original row heights and column widths from Excel file
-                # prepare_for_print only controls STEP 9 (dimension-modifying functions)
                 # ========================================
-                # DISABLED: Do not autofit rows or columns
-                # DISABLED: Do not modify merged cell heights
-                # Keep original Excel layout as-is for accurate PDF export
                 logging.info(f"[{workbook.Name}] {sheet.Name}: Preserving original row/column dimensions")
 
                 # ========================================
@@ -429,28 +517,6 @@ class ExcelConverter:
                 # ========================================
                 print_headings = print_options.get('print_row_col_headings', False)
                 self._set_row_col_headings(sheet, workbook.Name, print_headings)
-
-                # ========================================
-                # STEP 9: ENHANCED PREPARE FOR PRINT MODE
-                # Additional fixes for tables, images, and text in cells
-                # ========================================
-                if prepare_for_print:
-                    # Fix cell layout issues (empty cells causing text to hide)
-                    self._fix_cell_layout(sheet, workbook.Name)
-                    
-                    # Fit shapes/images to their containing cells (avoid overlap with text)
-                    self._fit_shapes_to_cells(sheet, workbook.Name)
-                    
-                    # Fix Excel Tables for printing
-                    self._fix_tables_for_print(sheet, workbook.Name)
-                    
-                    # Ensure all text is visible (wrapped, not shrunk too small)
-                    self._ensure_text_visible(sheet, workbook.Name)
-                    
-                    # DISABLED: Do not autofit rows - preserve original Excel layout
-                    # Keep original dimensions for accurate PDF export
-                    
-                    logging.info(f"[{workbook.Name}] {sheet.Name}: Preserved original layout for print")
 
             except Exception as e:
                 logging.warning(f"Could not prepare sheet {sheet.Name}: {e}")
@@ -600,9 +666,9 @@ class ExcelConverter:
         except Exception as e:
             logging.warning(f"Could not apply margins to {sheet.Name}: {e}")
 
-    def _apply_auto_mode(self, sheet, workbook_name):
+    def _apply_auto_mode(self, sheet, workbook_name, orientation='auto'):
         """
-        Default AUTO mode - fit columns to page, auto orientation.
+        Default AUTO mode - fit columns to page, configurable orientation.
         NOTE: This mode applies fitting which may alter dimensions.
         For exact dimension preservation, use native_print mode instead.
         """
@@ -613,19 +679,21 @@ class ExcelConverter:
             total_width_pts = 0
             total_height_pts = 0
 
-        # Auto-Orientation based on content dimensions
-        if total_width_pts > total_height_pts:
-            # Wide content -> Landscape
+        # Determine orientation
+        page_orientation = self._determine_orientation(sheet, orientation)
+        sheet.PageSetup.Orientation = page_orientation
+        
+        # Set paper size based on content and orientation
+        if page_orientation == xlLandscape:
+            # Landscape orientation
             if total_width_pts < 900:
                 sheet.PageSetup.PaperSize = xlPaperA4
                 logging.info(f"[{workbook_name}] {sheet.Name}: Auto-Layout -> A4 Landscape")
             else:
                 sheet.PageSetup.PaperSize = xlPaperA3
                 logging.info(f"[{workbook_name}] {sheet.Name}: Auto-Layout -> A3 Landscape")
-            sheet.PageSetup.Orientation = xlLandscape
         else:
-            # Tall/Square content -> Portrait
-            sheet.PageSetup.Orientation = xlPortrait
+            # Portrait orientation
             sheet.PageSetup.PaperSize = xlPaperA4
             logging.info(f"[{workbook_name}] {sheet.Name}: Auto-Layout -> A4 Portrait")
 
@@ -640,24 +708,15 @@ class ExcelConverter:
         except:
             pass
 
-    def _apply_one_page_mode(self, sheet, workbook_name):
+    def _apply_one_page_mode(self, sheet, workbook_name, orientation='auto'):
         """
         ONE PAGE mode - fit entire sheet content to a single page.
         """
         logging.info(f"[{workbook_name}] {sheet.Name}: Applying One Page mode")
         
-        # Set paper size and orientation
-        try:
-            total_width_pts = sheet.UsedRange.Width
-            total_height_pts = sheet.UsedRange.Height
-        except:
-            total_width_pts = 0
-            total_height_pts = 0
-
-        if total_width_pts > total_height_pts:
-            sheet.PageSetup.Orientation = xlLandscape
-        else:
-            sheet.PageSetup.Orientation = xlPortrait
+        # Determine and set orientation
+        page_orientation = self._determine_orientation(sheet, orientation)
+        sheet.PageSetup.Orientation = page_orientation
         
         # Fit BOTH width and height to 1 page
         sheet.PageSetup.Zoom = False
@@ -670,15 +729,16 @@ class ExcelConverter:
         except:
             pass
 
-    def _apply_table_row_break_mode(self, sheet, workbook_name, rows_per_page=None):
+    def _apply_table_row_break_mode(self, sheet, workbook_name, rows_per_page=None, orientation='auto'):
         """
         TABLE ROW BREAK mode - insert page breaks after tables or every N rows.
         """
         logging.info(f"[{workbook_name}] {sheet.Name}: Applying Table Row Break mode")
         
-        # Set basic page setup
+        # Set paper size and orientation
         sheet.PageSetup.PaperSize = xlPaperA4
-        sheet.PageSetup.Orientation = xlPortrait
+        page_orientation = self._determine_orientation(sheet, orientation)
+        sheet.PageSetup.Orientation = page_orientation
         sheet.PageSetup.Zoom = False
         sheet.PageSetup.FitToPagesWide = 1
         sheet.PageSetup.FitToPagesTall = False
@@ -792,10 +852,10 @@ class ExcelConverter:
         # If nothing fits, return largest size (A1)
         return "A1"
 
-    def _apply_auto_page_size_mode(self, sheet, workbook_name, page_size="A4"):
+    def _apply_auto_page_size_mode(self, sheet, workbook_name, page_size="A4", orientation='auto'):
         """
         AUTO PAGE SIZE mode - calculate page breaks based on selected page size.
-        Supports: auto, letter, tabloid, legal, statement, executive, A1, A2, A3, A4, A5, B4, B5
+        Supports: auto, letter, tabloid, legal, statement, executive, A1, A2, A3, A4, A5, A6, B4, B5, B6, and more
         """
         # Get content dimensions first for auto page size detection
         try:
@@ -824,13 +884,13 @@ class ExcelConverter:
         sheet.PageSetup.PaperSize = page_info["xl_const"]
         printable_height = page_info["printable_height"]
         
-        # Set orientation based on content (dimensions already read above)
-        if total_width_pts > total_height_pts:
-            sheet.PageSetup.Orientation = xlLandscape
-            # For landscape, swap printable height with width
+        # Determine and set orientation
+        page_orientation = self._determine_orientation(sheet, orientation)
+        sheet.PageSetup.Orientation = page_orientation
+        
+        # For landscape, swap printable height with width
+        if page_orientation == xlLandscape:
             printable_height = page_info["width"] - 100  # Account for margins
-        else:
-            sheet.PageSetup.Orientation = xlPortrait
         
         # Fit width to 1 page
         sheet.PageSetup.Zoom = False

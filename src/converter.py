@@ -56,10 +56,10 @@ xlPaperEnvelopePersonal = 38  # 9.21 x 16.51 cm (3.625 x 6.5 in)
 xlPaperFanfoldUS = 39   # 37.83 x 27.94 cm (14.875 x 11 in)
 xlPaperFanfoldStdGerman = 40  # 21.59 x 30.48 cm (8.5 x 12 in)
 xlPaperFanfoldLegalGerman = 41  # 21.59 x 33.02 cm (8.5 x 13 in)
-xlPaperUser = 256       # User-defined
 xlPaperA6 = 70          # 10.5 x 14.8 cm
-xlPaperA2 = 66          # 42 x 59.4 cm
-xlPaperA1 = 67          # 59.4 x 84.1 cm
+
+# Note: A1 (67) and A2 (66) are NOT supported by Microsoft Print to PDF
+# Use C Sheet, D Sheet, or E Sheet for large formats instead
 
 # Print Mode Constants
 PRINT_MODE_AUTO = "auto"
@@ -100,8 +100,9 @@ PAGE_SIZES = {
     "ENVELOPE_B5": {"width": 499, "height": 709, "printable_height": 620, "xl_const": xlPaperEnvelopeB5},
     "ENVELOPE_B6": {"width": 354, "height": 499, "printable_height": 410, "xl_const": xlPaperEnvelopeB6},
     "ENVELOPE_MONARCH": {"width": 279, "height": 540, "printable_height": 450, "xl_const": xlPaperEnvelopeMonarch},
-    "A1": {"width": 1684, "height": 2384, "printable_height": 2290, "xl_const": xlPaperA1},
-    "A2": {"width": 1191, "height": 1684, "printable_height": 1590, "xl_const": xlPaperA2},
+    # Note: A1 and A2 not reliably supported - use Architecture sizes or A3 instead
+    # "A1": {"width": 1684, "height": 2384, "printable_height": 2290, "xl_const": 67},
+    # "A2": {"width": 1191, "height": 1684, "printable_height": 1590, "xl_const": 66},
     "A3": {"width": 842, "height": 1191, "printable_height": 1100, "xl_const": xlPaperA3},
     "A4": {"width": 595, "height": 842, "printable_height": 750, "xl_const": xlPaperA4},
     "A4_SMALL": {"width": 595, "height": 842, "printable_height": 750, "xl_const": xlPaperA4Small},
@@ -109,7 +110,11 @@ PAGE_SIZES = {
     "A6": {"width": 298, "height": 420, "printable_height": 330, "xl_const": xlPaperA6},
     "B4": {"width": 729, "height": 1032, "printable_height": 940, "xl_const": xlPaperB4},
     "B5": {"width": 516, "height": 729, "printable_height": 640, "xl_const": xlPaperB5},
-    "B6": {"width": 363, "height": 516, "printable_height": 425, "xl_const": xlPaperEnvelopeB6}
+    "B6": {"width": 363, "height": 516, "printable_height": 425, "xl_const": xlPaperEnvelopeB6},
+    # Large Format Engineering Sizes (C/D/E Sheet) - Fully supported by Microsoft Print to PDF
+    "C_SHEET": {"width": 1224, "height": 1584, "printable_height": 1490, "xl_const": xlPaperCSheet},
+    "D_SHEET": {"width": 1584, "height": 2448, "printable_height": 2355, "xl_const": xlPaperDSheet},
+    "E_SHEET": {"width": 2448, "height": 3168, "printable_height": 3075, "xl_const": xlPaperESheet}
 }
 
 class ExcelConverter:
@@ -410,9 +415,9 @@ class ExcelConverter:
                     sheet.PageSetup.FitToPagesWide = False
                     sheet.PageSetup.FitToPagesTall = False
                     
-                    # Clear print area to ensure entire sheet is printed
+                    # Set print area to used range only (removes white space)
                     try:
-                        sheet.PageSetup.PrintArea = ""
+                        sheet.PageSetup.PrintArea = sheet.UsedRange.Address
                     except:
                         pass
                     
@@ -452,9 +457,9 @@ class ExcelConverter:
                 # STEP 3: PRINT MODE SPECIFIC SETUP
                 # ========================================
                 if sheet_print_mode == PRINT_MODE_ONE_PAGE:
-                    self._apply_one_page_mode(sheet, workbook.Name, orientation)
+                    self._apply_one_page_mode(sheet, workbook.Name, orientation, page_size)
                 elif sheet_print_mode == PRINT_MODE_TABLE_ROW_BREAK:
-                    self._apply_table_row_break_mode(sheet, workbook.Name, rows_per_page, orientation)
+                    self._apply_table_row_break_mode(sheet, workbook.Name, rows_per_page, orientation, page_size)
                 elif sheet_print_mode == PRINT_MODE_AUTO_PAGE_SIZE:
                     self._apply_auto_page_size_mode(sheet, workbook.Name, page_size, orientation)
                 elif sheet_print_mode == PRINT_MODE_UNIFORM_PAGE_SIZE:
@@ -463,7 +468,7 @@ class ExcelConverter:
                     pass
                 else:
                     # Default AUTO mode
-                    self._apply_auto_mode(sheet, workbook.Name, orientation)
+                    self._apply_auto_mode(sheet, workbook.Name, orientation, page_size)
 
                 # ========================================
                 # STEP 4: PRESERVE ORIGINAL DIMENSIONS (NO MODIFICATIONS)
@@ -666,9 +671,9 @@ class ExcelConverter:
         except Exception as e:
             logging.warning(f"Could not apply margins to {sheet.Name}: {e}")
 
-    def _apply_auto_mode(self, sheet, workbook_name, orientation='auto'):
+    def _apply_auto_mode(self, sheet, workbook_name, orientation='auto', page_size='auto'):
         """
-        Default AUTO mode - fit columns to page, configurable orientation.
+        Default AUTO mode - fit columns to page, configurable orientation and page size.
         NOTE: This mode applies fitting which may alter dimensions.
         For exact dimension preservation, use native_print mode instead.
         """
@@ -683,36 +688,67 @@ class ExcelConverter:
         page_orientation = self._determine_orientation(sheet, orientation)
         sheet.PageSetup.Orientation = page_orientation
         
-        # Set paper size based on content and orientation
-        if page_orientation == xlLandscape:
-            # Landscape orientation
-            if total_width_pts < 900:
-                sheet.PageSetup.PaperSize = xlPaperA4
-                logging.info(f"[{workbook_name}] {sheet.Name}: Auto-Layout -> A4 Landscape")
+        # Set paper size based on config or auto-detect
+        page_size_upper = page_size.upper() if page_size else "AUTO"
+        
+        if page_size_upper == "AUTO":
+            # Auto-detect paper size based on content and orientation
+            if page_orientation == xlLandscape:
+                # Landscape orientation
+                if total_width_pts < 900:
+                    sheet.PageSetup.PaperSize = xlPaperA4
+                    logging.info(f"[{workbook_name}] {sheet.Name}: Auto-Layout -> A4 Landscape")
+                else:
+                    sheet.PageSetup.PaperSize = xlPaperA3
+                    logging.info(f"[{workbook_name}] {sheet.Name}: Auto-Layout -> A3 Landscape")
             else:
-                sheet.PageSetup.PaperSize = xlPaperA3
-                logging.info(f"[{workbook_name}] {sheet.Name}: Auto-Layout -> A3 Landscape")
+                # Portrait orientation
+                sheet.PageSetup.PaperSize = xlPaperA4
+                logging.info(f"[{workbook_name}] {sheet.Name}: Auto-Layout -> A4 Portrait")
         else:
-            # Portrait orientation
-            sheet.PageSetup.PaperSize = xlPaperA4
-            logging.info(f"[{workbook_name}] {sheet.Name}: Auto-Layout -> A4 Portrait")
+            # Use configured page size
+            if page_size_upper in PAGE_SIZES:
+                page_info = PAGE_SIZES[page_size_upper]
+                try:
+                    sheet.PageSetup.PaperSize = page_info["xl_const"]
+                    logging.info(f"[{workbook_name}] {sheet.Name}: Auto-Layout -> {page_size_upper} {('Landscape' if page_orientation == xlLandscape else 'Portrait')}")
+                except Exception as e:
+                    # Fallback to A3
+                    sheet.PageSetup.PaperSize = xlPaperA3
+                    logging.warning(f"[{workbook_name}] {sheet.Name}: Paper size '{page_size_upper}' not supported, using A3. For large formats, use C_SHEET, D_SHEET, or E_SHEET instead.")
+            else:
+                # Fallback to A4 if invalid page size
+                sheet.PageSetup.PaperSize = xlPaperA4
+                logging.warning(f"[{workbook_name}] {sheet.Name}: Invalid page size '{page_size}', using A4")
 
         # Force Fit to 1 Page Wide (keeps original column proportions)
         sheet.PageSetup.Zoom = False
         sheet.PageSetup.FitToPagesWide = 1
         sheet.PageSetup.FitToPagesTall = False 
         
-        # Clear Print Area to ensure entire sheet is printed
+        # Set print area to used range only (removes white space)
         try:
-            sheet.PageSetup.PrintArea = ""
+            sheet.PageSetup.PrintArea = sheet.UsedRange.Address
         except:
             pass
 
-    def _apply_one_page_mode(self, sheet, workbook_name, orientation='auto'):
+    def _apply_one_page_mode(self, sheet, workbook_name, orientation='auto', page_size='auto'):
         """
         ONE PAGE mode - fit entire sheet content to a single page.
         """
         logging.info(f"[{workbook_name}] {sheet.Name}: Applying One Page mode")
+        
+        # Set page size
+        page_size_upper = page_size.upper() if page_size else "AUTO"
+        if page_size_upper != "AUTO" and page_size_upper in PAGE_SIZES:
+            try:
+                sheet.PageSetup.PaperSize = PAGE_SIZES[page_size_upper]["xl_const"]
+            except Exception as e:
+                # Fallback to A3
+                sheet.PageSetup.PaperSize = xlPaperA3
+                logging.warning(f"[{workbook_name}] {sheet.Name}: Paper size '{page_size_upper}' not supported, using A3. For large formats, use ARCH_C, ARCH_D, or ARCH_E.")
+        else:
+            sheet.PageSetup.PaperSize = xlPaperA4
         
         # Determine and set orientation
         page_orientation = self._determine_orientation(sheet, orientation)
@@ -723,20 +759,31 @@ class ExcelConverter:
         sheet.PageSetup.FitToPagesWide = 1
         sheet.PageSetup.FitToPagesTall = 1
         
-        # Clear Print Area
+        # Set print area to used range only (removes white space)
         try:
-            sheet.PageSetup.PrintArea = ""
+            sheet.PageSetup.PrintArea = sheet.UsedRange.Address
         except:
             pass
 
-    def _apply_table_row_break_mode(self, sheet, workbook_name, rows_per_page=None, orientation='auto'):
+    def _apply_table_row_break_mode(self, sheet, workbook_name, rows_per_page=None, orientation='auto', page_size='auto'):
         """
         TABLE ROW BREAK mode - insert page breaks after tables or every N rows.
         """
         logging.info(f"[{workbook_name}] {sheet.Name}: Applying Table Row Break mode")
         
-        # Set paper size and orientation
-        sheet.PageSetup.PaperSize = xlPaperA4
+        # Set paper size
+        page_size_upper = page_size.upper() if page_size else "AUTO"
+        if page_size_upper != "AUTO" and page_size_upper in PAGE_SIZES:
+            try:
+                sheet.PageSetup.PaperSize = PAGE_SIZES[page_size_upper]["xl_const"]
+            except Exception as e:
+                # Fallback to A3
+                sheet.PageSetup.PaperSize = xlPaperA3
+                logging.warning(f"[{workbook_name}] {sheet.Name}: Paper size '{page_size_upper}' not supported, using A3. For large formats, use ARCH_C, ARCH_D, or ARCH_E.")
+        else:
+            sheet.PageSetup.PaperSize = xlPaperA4
+        
+        # Set orientation
         page_orientation = self._determine_orientation(sheet, orientation)
         sheet.PageSetup.Orientation = page_orientation
         sheet.PageSetup.Zoom = False
@@ -785,22 +832,113 @@ class ExcelConverter:
 
     def _insert_page_breaks_by_rows(self, sheet, workbook_name, rows_per_page):
         """
-        Insert page breaks every N rows.
+        Insert page breaks intelligently based on rows_per_page configuration.
+        Calculates actual row heights and ensures content fits within the page's printable area.
         """
         try:
-            used_rows = sheet.UsedRange.Rows.Count
-            start_row = sheet.UsedRange.Row
+            used_range = sheet.UsedRange
+            used_rows = used_range.Rows.Count
+            start_row = used_range.Row
             
-            for row in range(start_row + rows_per_page, start_row + used_rows, rows_per_page):
+            # Get current page setup to calculate printable height
+            try:
+                page_size_const = sheet.PageSetup.PaperSize
+                orientation = sheet.PageSetup.Orientation
+                
+                # Find matching page size info
+                printable_height = None
+                for size_name, size_info in PAGE_SIZES.items():
+                    if size_info["xl_const"] == page_size_const:
+                        if orientation == xlLandscape:
+                            # For landscape, swap width and height
+                            printable_height = size_info["width"] - 100  # Account for margins
+                        else:
+                            printable_height = size_info["printable_height"]
+                        break
+                
+                # Fallback: use A4 portrait if page size not found
+                if printable_height is None:
+                    printable_height = PAGE_SIZES["A4"]["printable_height"]
+                    logging.warning(f"[{workbook_name}] {sheet.Name}: Could not determine page size, using A4 defaults")
+                
+                # Account for margins from PageSetup
                 try:
-                    sheet.HPageBreaks.Add(Before=sheet.Rows(row))
+                    top_margin = sheet.PageSetup.TopMargin
+                    bottom_margin = sheet.PageSetup.BottomMargin
+                    header_margin = sheet.PageSetup.HeaderMargin
+                    footer_margin = sheet.PageSetup.FooterMargin
+                    
+                    # Adjust printable height by subtracting margins
+                    available_height = printable_height - (top_margin + bottom_margin + header_margin + footer_margin)
+                    if available_height > 0:
+                        printable_height = available_height
                 except:
-                    pass
+                    pass  # Use default printable_height if margin reading fails
+                
+                logging.info(f"[{workbook_name}] {sheet.Name}: Printable page height: {printable_height:.0f} points")
+                
+            except Exception as e:
+                # Fallback to A4 portrait if page setup reading fails
+                printable_height = PAGE_SIZES["A4"]["printable_height"]
+                logging.warning(f"[{workbook_name}] {sheet.Name}: Could not read page setup, using A4 defaults: {e}")
             
-            breaks_count = (used_rows // rows_per_page)
-            logging.info(f"[{workbook_name}] {sheet.Name}: Inserted {breaks_count} page breaks (every {rows_per_page} rows)")
+            # Page break insertion logic
+            rows_in_current_page = 0
+            page_count = 1
+            last_break_row = start_row
+            
+            # When rows_per_page is set, use ONLY row count (ignore height calculations)
+            if rows_per_page:
+                for i in range(used_rows):
+                    try:
+                        row_index = start_row + i
+                        rows_in_current_page += 1
+                        
+                        # Insert page break after every rows_per_page rows
+                        if rows_in_current_page >= rows_per_page and i + 1 < used_rows:
+                            next_row_index = row_index + 1
+                            try:
+                                sheet.HPageBreaks.Add(Before=sheet.Rows(next_row_index))
+                                page_count += 1
+                                logging.debug(f"[{workbook_name}] {sheet.Name}: Page break at row {next_row_index} (every {rows_per_page} rows)")
+                                rows_in_current_page = 0
+                                last_break_row = next_row_index
+                            except Exception as e:
+                                logging.warning(f"Could not insert page break at row {next_row_index}: {e}")
+                    except Exception as e:
+                        logging.warning(f"Error processing row {i}: {e}")
+                        continue
+            else:
+                # No rows_per_page limit - use height-based calculation only
+                accumulated_height = 0
+                for i in range(used_rows):
+                    try:
+                        row = used_range.Rows(i + 1)
+                        row_height = row.Height
+                        row_index = start_row + i
+                        
+                        # Check if adding this row would exceed page height
+                        if accumulated_height + row_height > printable_height:
+                            # Insert page break before this row
+                            try:
+                                sheet.HPageBreaks.Add(Before=sheet.Rows(row_index))
+                                page_count += 1
+                                logging.debug(f"[{workbook_name}] {sheet.Name}: Page break at row {row_index} (accumulated: {accumulated_height:.0f}pts, limit: {printable_height:.0f}pts)")
+                                accumulated_height = row_height
+                                last_break_row = row_index
+                            except Exception as e:
+                                logging.warning(f"Could not insert page break at row {row_index}: {e}")
+                        else:
+                            accumulated_height += row_height
+                    except Exception as e:
+                        logging.warning(f"Error processing row {i}: {e}")
+                        continue
+            
+            avg_rows_per_page = used_rows / page_count if page_count > 0 else used_rows
+            logging.info(f"[{workbook_name}] {sheet.Name}: Inserted {page_count - 1} smart page breaks ({avg_rows_per_page:.1f} avg rows/page, max {rows_per_page} rows/page)")
+            
         except Exception as e:
-            logging.warning(f"Error inserting row-based page breaks: {e}")
+            logging.warning(f"Error inserting smart row-based page breaks: {e}")
 
     def _insert_page_breaks_by_columns(self, sheet, workbook_name, columns_per_page):
         """
@@ -880,8 +1018,16 @@ class ExcelConverter:
             page_info = PAGE_SIZES["A4"]
             page_size_upper = "A4"
         
-        # Set paper size using Excel constant
-        sheet.PageSetup.PaperSize = page_info["xl_const"]
+        # Set paper size using Excel constant with error handling
+        try:
+            sheet.PageSetup.PaperSize = page_info["xl_const"]
+        except Exception as e:
+            # Fallback to A3
+            sheet.PageSetup.PaperSize = xlPaperA3
+            logging.warning(f"[{workbook_name}] {sheet.Name}: Paper size '{page_size_upper}' not supported, using A3. For large formats, use C_SHEET, D_SHEET, or E_SHEET.")
+            # Update page_info to use fallback
+            page_info = PAGE_SIZES["A3"]
+        
         printable_height = page_info["printable_height"]
         
         # Determine and set orientation
@@ -982,8 +1128,15 @@ class ExcelConverter:
         # Step 3: Apply uniform page size to ALL sheets
         for sheet in workbook.Sheets:
             try:
-                # Set paper size
-                sheet.PageSetup.PaperSize = page_info["xl_const"]
+                # Set paper size with error handling
+                try:
+                    sheet.PageSetup.PaperSize = page_info["xl_const"]
+                except Exception as e:
+                    # Fallback to A3
+                    sheet.PageSetup.PaperSize = xlPaperA3
+                    logging.warning(f"[{workbook.Name}] {sheet.Name}: Paper size '{page_size_upper}' not supported, using A3. For large formats, use C_SHEET, D_SHEET, or E_SHEET.")
+                    # Update page_info to use fallback
+                    page_info = PAGE_SIZES["A3"]
                 
                 # Get sheet's own dimensions for orientation
                 try:
@@ -1006,9 +1159,9 @@ class ExcelConverter:
                 sheet.PageSetup.FitToPagesWide = 1
                 sheet.PageSetup.FitToPagesTall = False
                 
-                # Clear print area to print entire sheet
+                # Set print area to used range only (removes white space)
                 try:
-                    sheet.PageSetup.PrintArea = ""
+                    sheet.PageSetup.PrintArea = sheet.UsedRange.Address
                 except:
                     pass
                 

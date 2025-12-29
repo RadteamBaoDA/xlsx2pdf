@@ -125,7 +125,56 @@ print_options:
   print_row_col_headings: false     # Print row numbers and column letters
 ```
 
-## Troubleshooting
+## Page Break Controls
+
+### Smart Row-Based Page Breaks
+The `rows_per_page` setting now intelligently calculates page breaks based on:
+1. **Actual row heights** - Measures each row's real height in points
+2. **Printable page area** - Considers paper size, orientation, and margins
+3. **Maximum row limit** - Respects the rows_per_page value as an upper limit
+
+```yaml
+rows_per_page: 50           # Maximum 50 rows per page
+                            # BUT breaks earlier if content height exceeds page
+                            # System analyzes actual row heights dynamically
+```
+
+### How It Works
+- System calculates printable height from: paper size + orientation + margins
+- Accumulates actual row heights as it processes each row
+- Inserts page break when:
+  - Content height would exceed printable area, OR
+  - Row count reaches rows_per_page limit
+- Result: Content always fits properly on each page
+
+### Examples
+
+**Scenario 1: Small rows, high limit**
+```yaml
+rows_per_page: 100          # Limit: 100 rows
+page_size: "A4"             # Printable: ~750 points
+```
+Result: If rows average 5 points each, fits ~150 rows. Page breaks at 100 rows (limit reached first).
+
+**Scenario 2: Large rows, high limit**
+```yaml
+rows_per_page: 100          # Limit: 100 rows
+page_size: "A4"             # Printable: ~750 points
+```
+Result: If rows average 15 points each, only ~50 rows fit. Page breaks at 50 rows (height limit reached first).
+
+**Scenario 3: No row limit (height-based only)**
+```yaml
+rows_per_page: null         # No row limit
+page_size: "A4"
+```
+Result: Pages break only when content height exceeds printable area. Number of rows per page varies based on actual row heights.
+
+### Column-Based Page Breaks
+```yaml
+columns_per_page: 10        # Insert vertical page break every 10 columns
+```
+Simple column count-based breaks (does not calculate widths).
 
 ### Problem: Content is cut off
 **Solutions:**

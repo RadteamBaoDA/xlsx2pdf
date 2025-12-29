@@ -21,20 +21,28 @@ print_options:
     mode: "one_page"
     scaling: "fit_sheet"
     margins: "narrow"
-    page_size: "A1" 
+    page_size: "TABLOID"               # Tabloid: 11x17 inches (largest commonly supported)
+    orientation: "landscape"
+    print_header_footer: false
+    print_row_col_headings: false
+  - sheets: ['Spec']  # Apply these settings to Summary and Dashboard sheets
+    priority: 2                        # Highest priority
+    mode: "auto"
+    scaling: "fit_sheet"
+    margins: "narrow"
+    page_size: "TABLOID"               # Tabloid: 11x17 inches
     orientation: "landscape"
     print_header_footer: false
     print_row_col_headings: false
   - sheets: null                       # Default config for all other sheets (no sheets specified)
     priority: 99                       # Lowest priority (default fallback)
     mode: "auto"
-      #Page break controls - automatically split content into multiple pages
-    rows_per_page: 5       # Add horizontal page break every N rows (null = no automatic row breaks). Example: 50 = new page every 50 rows
+    rows_per_page: 5       # Smart page breaks: max 5 rows/page, but breaks earlier if content height exceeds page
     columns_per_page: null    # Add vertical page break every N columns (null = no automatic column breaks). Example: 10 = new page every 10 columns
     orientation: "landscape"
     scaling: "fit_columns"
     margins: "normal"
-    page_size: "A1" 
+    page_size: "TABLOID"               # Tabloid: 11x17 inches (largest commonly supported)
     print_header_footer: true
     print_row_col_headings: true
 
@@ -46,7 +54,10 @@ print_options:
   
 #   # Page size options (supports all Microsoft Print to PDF paper sizes)
 #   # Options: auto, letter, legal, tabloid, ledger, statement, executive, folio, 
-#   #          A3, A4, A5, A6, B4, B5, B6, envelope_10, envelope_monarch, envelope_DL, envelope_C5
+#   #          A3, A4, A5, A6, B4, B5, B6, 
+#   #          C_SHEET, D_SHEET, E_SHEET (large format engineering sizes)
+#   #          envelope_10, envelope_monarch, envelope_DL, envelope_C5
+#   # Note: A1 and A2 are NOT supported - use C_SHEET, D_SHEET, or E_SHEET for large formats
 #   page_size: "auto"         # auto = automatically detect best size based on content
   
 #   # Page orientation options
@@ -57,8 +68,11 @@ print_options:
 #   orientation: "auto"       # Default: auto-detect based on content
   
 #   # Page break controls - automatically split content into multiple pages
-#   rows_per_page: null       # Add horizontal page break every N rows (null = no automatic row breaks). Example: 50 = new page every 50 rows
-#   columns_per_page: null    # Add vertical page break every N columns (null = no automatic column breaks). Example: 10 = new page every 10 columns
+#   # Smart calculation: Analyzes actual row heights vs page dimensions
+#   rows_per_page: null       # Maximum rows per page. Inserts breaks intelligently based on actual content height
+#                             # null = auto-calculate breaks based on page height only (no row limit)
+#                             # Example: 50 = max 50 rows/page, breaks earlier if content exceeds printable height
+#   columns_per_page: null    # Add vertical page break every N columns (null = no automatic column breaks)
   
 #   native_printer: "Microsoft Print to PDF"  # Printer name for native_print mode
   

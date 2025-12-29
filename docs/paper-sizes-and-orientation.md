@@ -193,6 +193,104 @@ excel:
 
 **Print options scaling, margins, and headers are still fully configurable and applied during PDF export.**
 
+## Page Break Configuration
+
+### Smart Row-Based Page Breaks
+
+The `rows_per_page` configuration now features **intelligent height calculation**:
+
+#### How It Works
+1. **Reads actual row heights** from Excel in points (not assumed/average heights)
+2. **Calculates printable page area** from:
+   - Configured paper size (e.g., A4, Letter)
+   - Page orientation (portrait/landscape)
+   - Applied margins (normal/narrow/wide/custom)
+3. **Accumulates row heights** as it processes content
+4. **Inserts page breaks** when either:
+   - Accumulated height would exceed printable area, OR
+   - Row count reaches `rows_per_page` limit (if set)
+
+#### Configuration Options
+
+```yaml
+# Option 1: Height-based only (recommended for variable row heights)
+rows_per_page: null         # No row limit - breaks based on content height only
+```
+
+```yaml
+# Option 2: Hybrid mode (height + row limit)
+rows_per_page: 50           # Maximum 50 rows per page
+                            # Breaks earlier if content height exceeds page
+```
+
+```yaml
+# Option 3: No page breaks
+rows_per_page: null         # Don't configure to disable row-based breaks
+                            # (not included in print_options)
+```
+
+#### Benefits
+
+**Before (Simple Row Count)**
+- Fixed breaks every N rows
+- Didn't consider actual row heights
+- Could overflow page boundaries
+- Content might be cut off
+
+**After (Smart Height Calculation)**
+- ✅ Analyzes actual row heights dynamically
+- ✅ Ensures content fits within printable area
+- ✅ Respects paper size, orientation, and margins
+- ✅ No content overflow or cutoff
+- ✅ Still respects row limit as maximum
+
+#### Examples
+
+**Example 1: Mixed Row Heights**
+```yaml
+print_options:
+  page_size: "A4"           # ~750 points printable height
+  orientation: "portrait"
+  margins: "normal"
+  rows_per_page: 100        # Max 100 rows
+```
+
+Content with varying heights:
+- Rows 1-5: 30 points each (150 pts total)
+- Rows 6-60: 10 points each (550 pts total)
+- Row 61: 80 points (would exceed 750 pts)
+
+Result: Page break inserted at row 61 (after ~700 points), even though only 60 rows (not 100).
+
+**Example 2: Uniform Small Rows**
+```yaml
+print_options:
+  page_size: "A4"
+  rows_per_page: 40         # Max 40 rows
+```
+
+Content: All rows are 5 points each
+- 40 rows = 200 points (well under page limit)
+
+Result: Page breaks every 40 rows (row limit reached first).
+
+**Example 3: Auto Height-Only Mode**
+```yaml
+print_options:
+  page_size: "letter"
+  rows_per_page: null       # No row limit
+```
+
+Result: Pages break automatically when content height approaches page limit. Variable rows per page (might be 45 on one page, 67 on another).
+
+### Column-Based Page Breaks
+
+```yaml
+columns_per_page: 10        # Insert vertical page break every 10 columns
+```
+
+Note: Column breaks use simple count-based logic (does not calculate actual widths).
+
 ## Best Practices
 
 1. **Use "auto" for mixed content** - Let the system choose the best paper size and orientation

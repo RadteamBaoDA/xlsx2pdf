@@ -5,6 +5,10 @@ import pythoncom
 import win32process
 import os
 import logging
+import tempfile
+import stat
+import time
+import ctypes
 from .utils import ensure_dir
 
 # Excel Constants
@@ -151,10 +155,11 @@ class ExcelConverter:
             # though we primarily need it for 'Edit Mode' as requested)
             if os.path.exists(input_path):
                 try:
-                    # Check if file is read-only
-                    if not os.access(input_path, os.W_OK):
-                        # Try to remove read-only attribute
-                        os.chmod(input_path, 0o777)
+                    # Ensure file is writable (clear read-only attributes if present)
+                    try:
+                        self._ensure_writable_file(input_path)
+                    except Exception as e:
+                        logging.warning(f"Could not force writable for {input_path}: {e}")
                 except Exception as e:
                     logging.warning(f"Could not change file permissions for {input_path}: {e}")
 
@@ -165,6 +170,26 @@ class ExcelConverter:
             except Exception as e:
                 logging.error(f"Failed to open workbook {input_path}: {e}")
                 raise e
+
+            # If the input is an .xlsm (macro-enabled) file, convert it to .xlsx first
+            temp_converted = None
+            try:
+                if str(input_path).lower().endswith('.xlsm'):
+                    try:
+                        tmp = tempfile.gettempdir()
+                        base = Path(input_path).stem
+                        tmp_xlsx = os.path.join(tmp, f"{base}_xlsm_conv_{int(time.time())}.xlsx")
+                        # FileFormat=51 => xlOpenXMLWorkbook (.xlsx)
+                        workbook.SaveAs(tmp_xlsx, FileFormat=51)
+                        workbook.Close(SaveChanges=False)
+                        # Reopen the converted xlsx for processing
+                        workbook = excel.Workbooks.Open(tmp_xlsx, UpdateLinks=0, ReadOnly=False, IgnoreReadOnlyRecommended=True)
+                        temp_converted = tmp_xlsx
+                        logging.info(f"Converted .xlsm to .xlsx for processing: {tmp_xlsx}")
+                    except Exception as e:
+                        logging.warning(f"Could not convert .xlsm to .xlsx: {e}")
+            except Exception:
+                pass
 
             # Optimize Layout and apply print mode
             # Get default print mode from first sheet's config (handles both dict and list formats)
@@ -197,6 +222,18 @@ class ExcelConverter:
                     excel.Quit()
                 except:
                     pass
+
+            # Remove temporary converted .xlsx if created
+            try:
+                if 'temp_converted' in locals() and temp_converted and os.path.exists(temp_converted):
+                    try:
+                        os.remove(temp_converted)
+                        logging.info(f"Removed temporary converted file: {temp_converted}")
+                    except Exception as e:
+                        logging.warning(f"Could not remove temporary file {temp_converted}: {e}")
+            except Exception:
+                pass
+
             pythoncom.CoUninitialize()
 
 
@@ -223,6 +260,35 @@ class ExcelConverter:
         Does not modify shapes to preserve exact Excel layout.
         """
         logging.info(f"[{workbook_name}] {sheet.Name}: Preserving original shape layout")
+
+    def _ensure_writable_file(self, path):
+        """
+        Ensure the input file is writable by clearing read-only attributes and setting write permissions.
+        On Windows, clears the FILE_ATTRIBUTE_READONLY bit when present.
+        """
+        try:
+            # Make sure OS-level write permission bit is set
+            try:
+                os.chmod(path, os.stat(path).st_mode | stat.S_IWRITE)
+            except Exception:
+                pass
+
+            # On Windows, clear FILE_ATTRIBUTE_READONLY if set
+            try:
+                GetFileAttributesW = ctypes.windll.kernel32.GetFileAttributesW
+                SetFileAttributesW = ctypes.windll.kernel32.SetFileAttributesW
+                FILE_ATTRIBUTE_READONLY = 0x01
+                attrs = GetFileAttributesW(str(path))
+                if attrs != -1 and (attrs & FILE_ATTRIBUTE_READONLY):
+                    SetFileAttributesW(str(path), attrs & ~FILE_ATTRIBUTE_READONLY)
+            except Exception:
+                pass
+
+            logging.info(f"Ensured writable: {path}")
+            return True
+        except Exception as e:
+            logging.warning(f"Could not ensure writable for {path}: {e}")
+            return False
 
     def _ensure_shapes_visible(self, sheet, workbook_name):
         """

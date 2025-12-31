@@ -121,3 +121,12 @@ language_classification:
   output_suffix_format: "output-{lang}"  # Format for language-specific folders. {lang} will be replaced with language code
   keep_folder_structure: true             # Keep input folder structure in output folders
 
+# PDF trimming configuration
+# Automatically removes white margins from generated PDFs
+pdf_trim:
+  enabled: true                          # Enable/disable PDF margin trimming
+  margin_threshold: 10                   # Minimum margin size (in points) to consider for trimming
+  min_margin: 5                          # Minimum margin to keep after trimming (in points)
+  create_backup: false                   # Create backup copy of original PDF before trimming
+  backup_suffix: "_original"             # Suffix for backup files (only if create_backup: true)
+

@@ -10,6 +10,7 @@ import stat
 import time
 import ctypes
 from .utils import ensure_dir
+from .pdf_trimmer import PDFTrimmer
 
 # Excel Constants
 xlTypePDF = 0
@@ -124,6 +125,7 @@ PAGE_SIZES = {
 class ExcelConverter:
     def __init__(self, config):
         self.config = config
+        self.pdf_trimmer = PDFTrimmer(config)
 
     def convert(self, input_path, output_path, pid_queue=None):
         """
@@ -237,6 +239,13 @@ class ExcelConverter:
             
             # Export to PDF using ExportAsFixedFormat (reliable, no dialog)
             self._export_to_pdf(workbook, output_path)
+            
+            # Trim PDF margins if enabled
+            if os.path.exists(output_path):
+                try:
+                    self.pdf_trimmer.trim_pdf(output_path)
+                except Exception as e:
+                    logging.warning(f"Failed to trim PDF margins for {output_path}: {e}")
             
             return True
 

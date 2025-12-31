@@ -1,10 +1,35 @@
 import logging
 import os
+from datetime import datetime
+from pathlib import Path
 from logging.handlers import RotatingFileHandler, QueueHandler
 
-def setup_logger(log_file, error_file, log_level="INFO"):
+def create_timestamped_filename(base_name, logs_folder="logs"):
+    """
+    Creates a timestamped filename in the specified logs folder.
+    Format: base_name_yyyymmddhhmmss.ext
+    """
+    # Ensure logs folder exists
+    logs_path = Path(logs_folder)
+    logs_path.mkdir(parents=True, exist_ok=True)
+    
+    # Create timestamp
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    
+    # Split filename and extension
+    base_path = Path(base_name)
+    name_part = base_path.stem
+    ext_part = base_path.suffix
+    
+    # Create timestamped filename
+    timestamped_name = f"{name_part}_{timestamp}{ext_part}"
+    
+    return logs_path / timestamped_name
+
+def setup_logger(log_file, error_file, log_level="INFO", logs_folder="logs"):
     """
     Sets up the logger with file handlers for general logs and errors.
+    Creates timestamped log files in the specified logs folder.
     """
     level_map = {
         "DEBUG": logging.DEBUG,
@@ -14,9 +39,13 @@ def setup_logger(log_file, error_file, log_level="INFO"):
     }
     level = level_map.get(str(log_level).upper(), logging.INFO)
 
+    # Create timestamped log file paths
+    log_file_path = create_timestamped_filename(log_file, logs_folder)
+    error_file_path = create_timestamped_filename(error_file, logs_folder)
+
     # Create handlers
-    log_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=2, encoding='utf-8')
-    error_handler = RotatingFileHandler(error_file, maxBytes=5*1024*1024, backupCount=2, encoding='utf-8')
+    log_handler = RotatingFileHandler(log_file_path, maxBytes=5*1024*1024, backupCount=2, encoding='utf-8')
+    error_handler = RotatingFileHandler(error_file_path, maxBytes=5*1024*1024, backupCount=2, encoding='utf-8')
     
     # Create formatters and add it to handlers
     log_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
@@ -40,7 +69,11 @@ def setup_logger(log_file, error_file, log_level="INFO"):
     logger.addHandler(log_handler)
     logger.addHandler(error_handler)
     
-    return logger
+    # Log the file paths for user reference
+    print(f"Logging to: {log_file_path}")
+    print(f"Error logging to: {error_file_path}")
+    
+    return logger, str(log_file_path), str(error_file_path)
 
 def get_queue_logger(queue):
     """

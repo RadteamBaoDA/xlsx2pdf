@@ -3,6 +3,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from rich.table import Table
 from rich.panel import Panel
 import datetime
+from pathlib import Path
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn, MofNCompleteColumn
 from rich.table import Table
@@ -69,10 +70,22 @@ def print_summary(total, success, error, skipped, error_files):
         for f in error_files:
             console.print(f"- {f}")
 
-def save_summary_report(total, success, error, skipped, error_files, lang_distribution=None, output_file="summary_report.txt"):
-    """Saves the summary report to a text file."""
+def save_summary_report(total, success, error, skipped, error_files, lang_distribution=None, output_file="summary_report.txt", logs_folder="logs"):
+    """Saves the summary report to a timestamped text file in the logs folder."""
     try:
-        with open(output_file, "w", encoding="utf-8") as f:
+        # Create logs folder if it doesn't exist
+        logs_path = Path(logs_folder)
+        logs_path.mkdir(parents=True, exist_ok=True)
+        
+        # Create timestamped filename
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        base_path = Path(output_file)
+        name_part = base_path.stem
+        ext_part = base_path.suffix
+        timestamped_filename = f"{name_part}_{timestamp}{ext_part}"
+        full_path = logs_path / timestamped_filename
+        
+        with open(full_path, "w", encoding="utf-8") as f:
             f.write("Excel to PDF Conversion Summary Report\n")
             f.write(f"Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write("-" * 40 + "\n")
@@ -93,9 +106,11 @@ def save_summary_report(total, success, error, skipped, error_files, lang_distri
                 for line in error_files:
                     f.write(f"- {line}\n")
         
-        console.print(f"\n[dim]Summary report saved to: {output_file}[/dim]")
+        console.print(f"\n[dim]Summary report saved to: {full_path}[/dim]")
+        return str(full_path)
     except Exception as e:
-        console.print(f"[red]Failed to save summary report: {e}[/red]")
+        console.print(f"[red]Error saving summary report: {e}[/red]")
+        return None
 
 def print_banner():
     console.print(Panel.fit("[bold blue]Excel to PDF Converter[/bold blue]", border_style="blue"))

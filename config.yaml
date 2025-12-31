@@ -1,10 +1,16 @@
 timeout_minutes: 45
 output_suffix: "_x"
+empty_row_lookahead: 10  # Number of consecutive empty rows to check before truncating print area (default: 10)
 logging:
+  logs_folder: "logs"     # Directory to store log files (default: ./logs)
   log_file: "conversion.log"
   error_file: "errors.log"
   log_level: "INFO"       # DEBUG, INFO, WARNING, ERROR
   log_console_lines: 20   # Number of lines to show in UI console
+
+# Excel processing configuration
+excel:
+  prepare_for_print: false  # Disable copying files to enhanced_files directory
 
 # Print options for PDF conversion per sheet
 # Supports multiple configurations - list format applies different settings to different sheets

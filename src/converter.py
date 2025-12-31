@@ -143,6 +143,39 @@ class ExcelConverter:
             excel.Visible = False
             excel.DisplayAlerts = False
             
+            # Set default printer to "Microsoft Print to PDF" to avoid printer selection dialogs
+            try:
+                # Get current printer first to understand the format
+                current_printer = excel.ActivePrinter
+                logging.info(f"Current printer: {current_printer}")
+                
+                # Try multiple formats for Microsoft Print to PDF
+                printer_names = [
+                    "Microsoft Print to PDF on Ne00:",
+                    "Microsoft Print to PDF on Ne01:",
+                    "Microsoft Print to PDF on Ne02:", 
+                    "Microsoft Print to PDF on Ne03:",
+                    "Microsoft Print to PDF on Ne04:",
+                    "Microsoft Print to PDF on FILE:",
+                    "Microsoft Print to PDF"
+                ]
+                
+                printer_set = False
+                for printer_name in printer_names:
+                    try:
+                        excel.ActivePrinter = printer_name
+                        logging.info(f"Successfully set printer to: {printer_name}")
+                        printer_set = True
+                        break
+                    except:
+                        continue
+                
+                if not printer_set:
+                    logging.warning("Could not set Microsoft Print to PDF. Using system default printer.")
+                        
+            except Exception as e:
+                logging.warning(f"Could not access printer settings: {e}. Continuing with system default.")
+            
             # Send PID back to parent if queue provided
             if pid_queue:
                 try:
@@ -371,10 +404,13 @@ class ExcelConverter:
 
     def _adjust_usedrange_for_images(self, sheet, workbook_name):
         """
-        Enhance the effective UsedRange/PrintArea by checking for columns where the
-        header contains the word 'image' (case-insensitive) and the column contains
-        data or is used by a shape. If such columns extend beyond the current
-        UsedRange end column, expand the PrintArea to include them.
+        Intelligently calculate print area based on rows with actual content (text or objects).
+        
+        Strategy:
+        1. Scan each row to detect if it has text content OR shapes/objects
+        2. If a row appears empty, look ahead 10 rows
+        3. If all 10 rows ahead are also empty, truncate print area at that point
+        4. Also expand columns to include 'image' labeled columns with content
         """
         try:
             used = sheet.UsedRange
@@ -383,9 +419,62 @@ class ExcelConverter:
             used_rows = used.Rows.Count
             used_cols = used.Columns.Count
             last_col = start_col + used_cols - 1
+            last_row = start_row + used_rows - 1
 
-            # Look for image columns in header row(s). Prefer the UsedRange header row,
-            # but also check the first worksheet row if different.
+            # Build a map of which rows have shapes anchored to them
+            rows_with_shapes = set()
+            try:
+                for shape in sheet.Shapes:
+                    try:
+                        top_left = shape.TopLeftCell
+                        bottom_right = shape.BottomRightCell
+                        shape_start_row = top_left.Row
+                        shape_end_row = bottom_right.Row
+                        for r in range(shape_start_row, shape_end_row + 1):
+                            rows_with_shapes.add(r)
+                    except:
+                        pass
+            except:
+                pass
+
+            # Scan rows from start to find the last row with actual content
+            actual_last_row = start_row
+            empty_streak = 0
+            # Get lookahead value from config (default: 10 rows)
+            LOOKAHEAD_ROWS = self.config.get('empty_row_lookahead', 10)
+
+            for row_idx in range(start_row, last_row + 1):
+                row_has_content = False
+                
+                # Check if row has any text content
+                try:
+                    for col_idx in range(start_col, last_col + 1):
+                        cell = sheet.Cells(row_idx, col_idx)
+                        cell_value = cell.Value
+                        
+                        if cell_value is not None and str(cell_value).strip() != "":
+                            row_has_content = True
+                            break
+                except:
+                    pass
+                
+                # Check if row has any shapes/objects
+                if not row_has_content and row_idx in rows_with_shapes:
+                    row_has_content = True
+                
+                if row_has_content:
+                    # Found content - reset empty streak and update last row
+                    actual_last_row = row_idx
+                    empty_streak = 0
+                else:
+                    # Empty row - increment streak
+                    empty_streak += 1
+                    
+                    # If we've seen LOOKAHEAD_ROWS consecutive empty rows, stop
+                    if empty_streak >= LOOKAHEAD_ROWS:
+                        break
+
+            # Now expand columns to include 'image' labeled columns with content
             header_rows = [start_row]
             if start_row != 1:
                 header_rows.append(1)
@@ -411,7 +500,7 @@ class ExcelConverter:
 
                     # Check if any cell in the column (below header) has a value
                     has_value = False
-                    for r in range(start_row + 1, start_row + used_rows):
+                    for r in range(start_row + 1, actual_last_row + 1):
                         try:
                             v = sheet.Cells(r, col).Value
                             if v is not None and str(v).strip() != "":
@@ -461,7 +550,7 @@ class ExcelConverter:
                 for col in range(last_col + 1, max_scan + 1):
                     try:
                         found = False
-                        for r in range(start_row, start_row + used_rows):
+                        for r in range(start_row, actual_last_row + 1):
                             try:
                                 v = sheet.Cells(r, col).Value
                                 if v is not None and str(v).strip() != "":
@@ -484,14 +573,19 @@ class ExcelConverter:
             else:
                 new_last_col = last_col
 
-            # Update PrintArea if expanded
+            # Update PrintArea with smart row and column detection
             try:
-                rng = sheet.Range(sheet.Cells(start_row, start_col), sheet.Cells(start_row + used_rows - 1, new_last_col))
+                rng = sheet.Range(sheet.Cells(start_row, start_col), sheet.Cells(actual_last_row, new_last_col))
                 addr = rng.Address
                 sheet.PageSetup.PrintArea = addr
-                logging.info(f"[{workbook_name}] {sheet.Name}: Enhanced PrintArea set to {addr} based on image columns: {candidate_cols}")
+                
+                rows_removed = last_row - actual_last_row
+                if rows_removed > 0:
+                    logging.info(f"[{workbook_name}] {sheet.Name}: Smart PrintArea set to {addr} (removed {rows_removed} trailing empty rows, expanded to include image columns)")
+                else:
+                    logging.info(f"[{workbook_name}] {sheet.Name}: Smart PrintArea set to {addr} (expanded to include image columns)")
             except Exception as e:
-                logging.warning(f"[{workbook_name}] {sheet.Name}: Could not set enhanced PrintArea: {e}")
+                logging.warning(f"[{workbook_name}] {sheet.Name}: Could not set smart PrintArea: {e}")
 
         except Exception as e:
             logging.warning(f"[{workbook_name}] {sheet.Name}: Error adjusting UsedRange for images: {e}")
@@ -1480,6 +1574,13 @@ class ExcelConverter:
             # Ensure output path is absolute and properly formatted
             output_path = str(Path(output_path).resolve())
             
+            # Additional COM initialization for PDF export reliability
+            try:
+                import pythoncom
+                pythoncom.CoInitialize()
+            except:
+                pass
+            
             # Export to PDF using ExportAsFixedFormat
             # IncludeDocProperties=True for RAG/AI Search metadata
             workbook.ExportAsFixedFormat(
@@ -1500,7 +1601,19 @@ class ExcelConverter:
                 raise Exception(f"ExportAsFixedFormat did not create output file: {output_path}")
                 
         except Exception as e:
-            logging.error(f"PDF export failed: {e}")
+            error_message = str(e)
+            if "Current printer is unavailable" in error_message or "-2146827284" in error_message:
+                logging.error(f"PDF export failed: Printer configuration issue. This can usually be resolved by:")
+                logging.error("  1. Setting 'Microsoft Print to PDF' as default printer in Windows")
+                logging.error("  2. Restarting Excel applications")  
+                logging.error("  3. Running Windows printer troubleshooter")
+                logging.error(f"  Technical error: {e}")
+            elif "Document not saved" in error_message:
+                logging.error(f"PDF export failed: File access error. Check if file is open elsewhere or permissions. Error: {e}")
+            elif "Exception occurred" in error_message or "-2147352567" in error_message:
+                logging.error(f"PDF export failed: Excel COM automation error. Try closing all Excel windows and retry. Error: {e}")
+            else:
+                logging.error(f"PDF export failed: {e}")
             raise
 
     def _autofit_merged_cells(self, sheet, workbook_name):

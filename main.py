@@ -128,11 +128,12 @@ def main():
     layout = create_layout(progress, log_console)
 
     # Setup Logging
+    logs_folder = config.get('logging', {}).get('logs_folder', 'logs')
     log_file = config.get('logging', {}).get('log_file', 'conversion.log')
     error_file = config.get('logging', {}).get('error_file', 'errors.log')
     log_level = config.get('logging', {}).get('log_level', 'INFO')
     
-    root_logger = setup_logger(log_file, error_file, log_level)
+    root_logger, actual_log_file, actual_error_file = setup_logger(log_file, error_file, log_level, logs_folder)
     
     # Attach UI Handler
     root_logger.addHandler(UIHandler(log_console))
@@ -305,7 +306,7 @@ def main():
             log_info(f"{lang}: {count} files")
     
     print_summary(total_files, success_count, error_count, skipped_count, error_files_list)
-    save_summary_report(total_files, success_count, error_count, skipped_count, error_files_list, lang_distribution if lang_detector.is_enabled() else None)
+    save_summary_report(total_files, success_count, error_count, skipped_count, error_files_list, lang_distribution if lang_detector.is_enabled() else None, logs_folder=logs_folder)
 
 if __name__ == "__main__":
     multiprocessing.freeze_support() 

@@ -759,7 +759,7 @@ class ExcelConverter:
                 if sheet_print_mode == PRINT_MODE_ONE_PAGE:
                     self._apply_one_page_mode(sheet, workbook.Name, orientation, page_size)
                 elif sheet_print_mode == PRINT_MODE_TABLE_ROW_BREAK:
-                    self._apply_table_row_break_mode(sheet, workbook.Name, rows_per_page, orientation, page_size)
+                    page_ranges = self._apply_table_row_break_mode(sheet, workbook.Name, rows_per_page, orientation, page_size)
                 elif sheet_print_mode == PRINT_MODE_AUTO_PAGE_SIZE:
                     self._apply_auto_page_size_mode(sheet, workbook.Name, page_size, orientation)
                 elif sheet_print_mode == PRINT_MODE_UNIFORM_PAGE_SIZE:
@@ -799,19 +799,21 @@ class ExcelConverter:
                 # ========================================
                 rows_per_page_custom = print_options.get('rows_per_page')
                 columns_per_page_custom = print_options.get('columns_per_page')
+                page_ranges = None
                 
                 if rows_per_page_custom:
-                    self._insert_page_breaks_by_rows(sheet, workbook.Name, rows_per_page_custom)
+                    page_ranges = self._insert_page_breaks_by_rows(sheet, workbook.Name, rows_per_page_custom)
                 
                 if columns_per_page_custom:
                     self._insert_page_breaks_by_columns(sheet, workbook.Name, columns_per_page_custom)
 
                 # ========================================
                 # STEP 7: SETUP HEADER AND FOOTER
-                # Add sheet name to header and row range to footer
+                # Add sheet name to header and row range to header (moved from footer for PDF trimming)
                 # ========================================
                 if print_options.get('print_header_footer', True):
-                    self._setup_header_footer(sheet, workbook.Name)
+                    # Pass print_options and page_ranges to header setup for accurate row tracking
+                    self._setup_header_footer(sheet, workbook.Name, print_options, page_ranges)
                 else:
                     # Clear any existing header/footer
                     self._clear_header_footer(sheet, workbook.Name)
@@ -1104,12 +1106,15 @@ class ExcelConverter:
         except Exception as e:
             logging.warning(f"Could not reset page breaks: {e}")
         
+        page_ranges = None
         if rows_per_page:
             # Fixed rows per page mode
-            self._insert_page_breaks_by_rows(sheet, workbook_name, rows_per_page)
+            page_ranges = self._insert_page_breaks_by_rows(sheet, workbook_name, rows_per_page)
         else:
             # Auto-detect tables (ListObjects) and break after each
             self._insert_page_breaks_by_tables(sheet, workbook_name)
+            
+        return page_ranges
 
     def _insert_page_breaks_by_tables(self, sheet, workbook_name):
         """
@@ -1142,6 +1147,7 @@ class ExcelConverter:
         """
         Insert page breaks intelligently based on rows_per_page configuration.
         Calculates actual row heights and ensures content fits within the page's printable area.
+        Also creates enhanced headers with page-specific row information.
         """
         try:
             used_range = sheet.UsedRange
@@ -1190,10 +1196,12 @@ class ExcelConverter:
                 printable_height = PAGE_SIZES["A4"]["printable_height"]
                 logging.warning(f"[{workbook_name}] {sheet.Name}: Could not read page setup, using A4 defaults: {e}")
             
-            # Page break insertion logic
+            # Page break insertion logic with page range tracking
             rows_in_current_page = 0
             page_count = 1
             last_break_row = start_row
+            page_ranges = []  # Track row ranges for each page
+            current_page_start = start_row
             
             # When rows_per_page is set, use ONLY row count (ignore height calculations)
             if rows_per_page:
@@ -1205,35 +1213,68 @@ class ExcelConverter:
                         # Insert page break after every rows_per_page rows
                         if rows_in_current_page >= rows_per_page and i + 1 < used_rows:
                             next_row_index = row_index + 1
+                            
+                            # Record the page range before inserting break
+                            page_ranges.append({
+                                'page': page_count,
+                                'start_row': current_page_start,
+                                'end_row': row_index,
+                                'row_count': rows_in_current_page
+                            })
+                            
                             try:
                                 sheet.HPageBreaks.Add(Before=sheet.Rows(next_row_index))
                                 page_count += 1
-                                logging.debug(f"[{workbook_name}] {sheet.Name}: Page break at row {next_row_index} (every {rows_per_page} rows)")
+                                logging.debug(f"[{workbook_name}] {sheet.Name}: Page break at row {next_row_index} (page {page_count-1}: rows {current_page_start}-{row_index})")
                                 rows_in_current_page = 0
                                 last_break_row = next_row_index
+                                current_page_start = next_row_index
                             except Exception as e:
                                 logging.warning(f"Could not insert page break at row {next_row_index}: {e}")
                     except Exception as e:
                         logging.warning(f"Error processing row {i}: {e}")
                         continue
+                
+                # Add the final page range
+                if rows_in_current_page > 0:
+                    page_ranges.append({
+                        'page': page_count,
+                        'start_row': current_page_start,
+                        'end_row': start_row + used_rows - 1,
+                        'row_count': rows_in_current_page
+                    })
+                    
             else:
                 # No rows_per_page limit - use height-based calculation only
                 accumulated_height = 0
+                current_page_rows = 0
+                
                 for i in range(used_rows):
                     try:
                         row = used_range.Rows(i + 1)
                         row_height = row.Height
                         row_index = start_row + i
+                        current_page_rows += 1
                         
                         # Check if adding this row would exceed page height
                         if accumulated_height + row_height > printable_height:
+                            # Record the page range before inserting break
+                            page_ranges.append({
+                                'page': page_count,
+                                'start_row': current_page_start,
+                                'end_row': row_index - 1,
+                                'row_count': current_page_rows - 1
+                            })
+                            
                             # Insert page break before this row
                             try:
                                 sheet.HPageBreaks.Add(Before=sheet.Rows(row_index))
                                 page_count += 1
-                                logging.debug(f"[{workbook_name}] {sheet.Name}: Page break at row {row_index} (accumulated: {accumulated_height:.0f}pts, limit: {printable_height:.0f}pts)")
+                                logging.debug(f"[{workbook_name}] {sheet.Name}: Page break at row {row_index} (page {page_count-1}: rows {current_page_start}-{row_index-1})")
                                 accumulated_height = row_height
                                 last_break_row = row_index
+                                current_page_start = row_index
+                                current_page_rows = 1
                             except Exception as e:
                                 logging.warning(f"Could not insert page break at row {row_index}: {e}")
                         else:
@@ -1241,12 +1282,30 @@ class ExcelConverter:
                     except Exception as e:
                         logging.warning(f"Error processing row {i}: {e}")
                         continue
+                
+                # Add the final page range
+                if current_page_rows > 0:
+                    page_ranges.append({
+                        'page': page_count,
+                        'start_row': current_page_start,
+                        'end_row': start_row + used_rows - 1,
+                        'row_count': current_page_rows
+                    })
+            
+            # Log the page ranges for reference
+            if page_ranges:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Page ranges created:")
+                for page_info in page_ranges:
+                    logging.info(f"  Page {page_info['page']}: Rows {page_info['start_row']}-{page_info['end_row']} ({page_info['row_count']} rows)")
             
             avg_rows_per_page = used_rows / page_count if page_count > 0 else used_rows
             logging.info(f"[{workbook_name}] {sheet.Name}: Inserted {page_count - 1} smart page breaks ({avg_rows_per_page:.1f} avg rows/page, max {rows_per_page} rows/page)")
             
+            return page_ranges  # Return page range information for potential use in headers
+            
         except Exception as e:
             logging.warning(f"Error inserting smart row-based page breaks: {e}")
+            return []
 
     def _insert_page_breaks_by_columns(self, sheet, workbook_name, columns_per_page):
         """
@@ -1504,44 +1563,77 @@ class ExcelConverter:
             except Exception as e:
                 logging.warning(f"Could not apply uniform page size to sheet {sheet.Name}: {e}")
 
-    def _setup_header_footer(self, sheet, workbook_name):
+    def _setup_header_footer(self, sheet, workbook_name, print_options=None, page_ranges=None):
         """
         Setup header and footer for the sheet.
-        Header: Sheet name
-        Footer: Row range (begin to end) for the current page
+        Header: All metadata including sheet name, row tracking, and page info (moved from footer for PDF trimming)
+        Footer: Empty (to avoid content loss during PDF trimming)
         
-        Note: Only includes data from Excel file - no date/time.
-        
-        Excel Header/Footer codes:
-        &A - Sheet name
-        &P - Current page number
-        &N - Total pages
-        &F - File name
+        The row tracking now properly shows page-specific ranges when rows_per_page is configured.
         """
         try:
             # Get used range info for row tracking
             used_range = sheet.UsedRange
             start_row = used_range.Row
             end_row = start_row + used_range.Rows.Count - 1
+            total_rows = used_range.Rows.Count
             
-            # Clear all header/footer sections first (remove any date/time)
+            # Clear all header/footer sections first
             sheet.PageSetup.LeftHeader = ""
             sheet.PageSetup.RightHeader = ""
             sheet.PageSetup.LeftFooter = ""
             sheet.PageSetup.RightFooter = ""
+            sheet.PageSetup.CenterFooter = ""
             
-            # Center Header: Sheet name only
-            # Format: "Sheet: [SheetName]"
-            sheet.PageSetup.CenterHeader = f"&\"Arial,Bold\"Sheet: {sheet.Name}"
+            # Get rows_per_page setting for accurate row tracking
+            rows_per_page = None
+            if print_options:
+                rows_per_page = print_options.get('rows_per_page')
             
-            # Center Footer: Row range and page information only (no date/time)
-            # Format: "Rows: [StartRow] - [EndRow] | Page X of Y"
-            sheet.PageSetup.CenterFooter = f"&\"Arial\"Rows: {start_row} - {end_row} | Page &P of &N"
+            # Setup enhanced header with all metadata (moved from footer for PDF trimming)
+            self._setup_enhanced_header(sheet, workbook_name, start_row, end_row, total_rows, rows_per_page, page_ranges)
             
-            logging.info(f"[{workbook_name}] {sheet.Name}: Set header/footer (Rows {start_row}-{end_row})")
+            logging.info(f"[{workbook_name}] {sheet.Name}: Set enhanced header with metadata (Rows {start_row}-{end_row}, rows_per_page: {rows_per_page})")
             
         except Exception as e:
             logging.warning(f"Could not setup header/footer for {sheet.Name}: {e}")
+    
+    def _setup_enhanced_header(self, sheet, workbook_name, start_row, end_row, total_rows, rows_per_page, page_ranges=None):
+        """
+        Setup enhanced header with page-specific row tracking for better traceability to original file.
+        All metadata moved to header to prevent loss during PDF trimming.
+        """
+        try:
+            # LEFT HEADER: Sheet name with better formatting
+            sheet.PageSetup.LeftHeader = f"&\"Arial,Bold\"&L{sheet.Name}"
+            
+            # CENTER HEADER: Enhanced row tracking with page-specific information
+            if rows_per_page and rows_per_page > 0:
+                if page_ranges and len(page_ranges) > 1:
+                    # Multi-page with specific ranges - provide helpful context
+                    center_text = f"&\"Arial\"&CRows/Page: {rows_per_page} max | Total: {start_row}-{end_row} ({total_rows} rows) | {len(page_ranges)} pages"
+                else:
+                    # Single page or no range data
+                    center_text = f"&\"Arial\"&CRows: {start_row}-{end_row} ({total_rows} rows, {rows_per_page}/page max)"
+            else:
+                # Auto-break or single-page sheets
+                center_text = f"&\"Arial\"&CRows: {start_row}-{end_row} ({total_rows} total rows)"
+            
+            sheet.PageSetup.CenterHeader = center_text
+            
+            # RIGHT HEADER: Page information (moved from footer for PDF trimming safety)
+            sheet.PageSetup.RightHeader = f"&\"Arial\"&RPage &P of &N"
+            
+            # Log page ranges for reference (helps with tracking original file locations)
+            if page_ranges and len(page_ranges) > 1:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Page structure for reference:")
+                for page_info in page_ranges[:5]:  # Log first 5 pages for reference
+                    logging.info(f"  Page {page_info['page']}: Excel rows {page_info['start_row']}-{page_info['end_row']} ({page_info['row_count']} rows)")
+                if len(page_ranges) > 5:
+                    logging.info(f"  ... and {len(page_ranges) - 5} more pages")
+            
+        except Exception as e:
+            logging.warning(f"Could not setup enhanced header for {sheet.Name}: {e}")
 
     def _clear_header_footer(self, sheet, workbook_name):
         """

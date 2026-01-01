@@ -3,3 +3,4 @@ rich
 pyyaml
 psutil
 langdetect
+pypdf

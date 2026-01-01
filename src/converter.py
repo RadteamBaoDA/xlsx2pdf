@@ -10,6 +10,7 @@ import stat
 import time
 import ctypes
 from .utils import ensure_dir
+from .pdf_trimmer import PDFTrimmer
 
 # Excel Constants
 xlTypePDF = 0
@@ -124,6 +125,7 @@ PAGE_SIZES = {
 class ExcelConverter:
     def __init__(self, config):
         self.config = config
+        self.pdf_trimmer = PDFTrimmer(config)
 
     def convert(self, input_path, output_path, pid_queue=None):
         """
@@ -238,6 +240,13 @@ class ExcelConverter:
             # Export to PDF using ExportAsFixedFormat (reliable, no dialog)
             self._export_to_pdf(workbook, output_path)
             
+            # Trim PDF margins if enabled
+            if os.path.exists(output_path):
+                try:
+                    self.pdf_trimmer.trim_pdf(output_path)
+                except Exception as e:
+                    logging.warning(f"Failed to trim PDF margins for {output_path}: {e}")
+            
             return True
 
         except Exception as e:
@@ -327,20 +336,44 @@ class ExcelConverter:
         """
         Ensures all shapes (images, charts, objects) are visible and properly sized.
         Fixes issues where images/objects may be hidden or clipped.
+        Enhanced handling for embedded objects that might cause export issues.
+        Provides detailed analysis of multi-image rows.
         """
         try:
             shape_count = 0
             fixed_count = 0
+            problem_shapes = 0
+            row_image_analysis = {}
             
             for shape in sheet.Shapes:
                 try:
                     shape_count += 1
+                    shape_name = getattr(shape, 'Name', f'Shape{shape_count}')
+                    shape_type = getattr(shape, 'Type', 'Unknown')
+                    
+                    # Determine which row this shape is in for multi-image analysis
+                    try:
+                        top_left_cell = shape.TopLeftCell
+                        row_num = top_left_cell.Row
+                        col_num = top_left_cell.Column
+                        
+                        if row_num not in row_image_analysis:
+                            row_image_analysis[row_num] = []
+                        row_image_analysis[row_num].append({
+                            'name': shape_name,
+                            'type': shape_type,
+                            'column': col_num,
+                            'visible': getattr(shape, 'Visible', True)
+                        })
+                    except:
+                        pass
                     
                     # Ensure shape is visible
                     if hasattr(shape, 'Visible'):
                         if not shape.Visible:
                             shape.Visible = True
                             fixed_count += 1
+                            logging.debug(f"[{workbook_name}] {sheet.Name}: Made shape '{shape_name}' visible")
                     
                     # Ensure shape prints
                     try:
@@ -348,24 +381,45 @@ class ExcelConverter:
                     except:
                         pass
                     
-                    # Get the cell range the shape is in
+                    # Set stable placement to prevent issues during export
                     try:
-                        top_left_cell = shape.TopLeftCell
-                        
-                        # DISABLED: Do not modify row heights
-                        # Keep original Excel layout as-is
+                        # xlMove = 2 (Move but don't size with cells)
+                        shape.Placement = 2
+                    except:
                         pass
-                            
+                    
+                    # Check for potentially problematic embedded objects
+                    try:
+                        # Type 13 = embedded OLE object, Type 14 = linked OLE object
+                        if shape_type in [13, 14, 15]:  # Potentially problematic types
+                            logging.debug(f"[{workbook_name}] {sheet.Name}: Found potentially problematic embedded object '{shape_name}' (Type: {shape_type})")
+                            problem_shapes += 1
                     except:
                         pass
                         
                 except Exception as e:
+                    logging.debug(f"Error processing shape: {e}")
                     continue
+            
+            # Analyze and report multi-image rows
+            multi_image_rows = {row: shapes for row, shapes in row_image_analysis.items() if len(shapes) > 1}
+            
+            if multi_image_rows:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Found {len(multi_image_rows)} rows with multiple images:")
+                for row_num, shapes in multi_image_rows.items():
+                    shape_details = []
+                    for shape_info in shapes:
+                        visibility = "visible" if shape_info['visible'] else "hidden"
+                        shape_details.append(f"'{shape_info['name']}' (Col {shape_info['column']}, {visibility})")
+                    logging.info(f"  Row {row_num}: {len(shapes)} images - {', '.join(shape_details)}")
+            
+            if problem_shapes > 0:
+                logging.warning(f"[{workbook_name}] {sheet.Name}: Found {problem_shapes} embedded objects that may cause export issues")
             
             if fixed_count > 0:
                 logging.info(f"[{workbook_name}] {sheet.Name}: Fixed {fixed_count} shapes/images visibility")
             elif shape_count > 0:
-                logging.info(f"[{workbook_name}] {sheet.Name}: Checked {shape_count} shapes/images")
+                logging.info(f"[{workbook_name}] {sheet.Name}: Checked {shape_count} shapes/images ({len(multi_image_rows)} multi-image rows)")
                 
         except Exception as e:
             logging.warning(f"Could not ensure shapes visible in {sheet.Name}: {e}")
@@ -750,7 +804,7 @@ class ExcelConverter:
                 if sheet_print_mode == PRINT_MODE_ONE_PAGE:
                     self._apply_one_page_mode(sheet, workbook.Name, orientation, page_size)
                 elif sheet_print_mode == PRINT_MODE_TABLE_ROW_BREAK:
-                    self._apply_table_row_break_mode(sheet, workbook.Name, rows_per_page, orientation, page_size)
+                    page_ranges = self._apply_table_row_break_mode(sheet, workbook.Name, rows_per_page, orientation, page_size)
                 elif sheet_print_mode == PRINT_MODE_AUTO_PAGE_SIZE:
                     self._apply_auto_page_size_mode(sheet, workbook.Name, page_size, orientation)
                 elif sheet_print_mode == PRINT_MODE_UNIFORM_PAGE_SIZE:
@@ -790,19 +844,27 @@ class ExcelConverter:
                 # ========================================
                 rows_per_page_custom = print_options.get('rows_per_page')
                 columns_per_page_custom = print_options.get('columns_per_page')
+                page_ranges = None
+                
+                # Always calculate page ranges if row headings are enabled or rows_per_page is set
+                print_headings = print_options.get('print_row_col_headings', False)
                 
                 if rows_per_page_custom:
-                    self._insert_page_breaks_by_rows(sheet, workbook.Name, rows_per_page_custom)
+                    page_ranges = self._insert_page_breaks_by_rows(sheet, workbook.Name, rows_per_page_custom)
+                elif print_headings:
+                    # Auto-calculate page breaks based on print area for row headings to work properly
+                    page_ranges = self._auto_calculate_page_breaks_for_headings(sheet, workbook.Name)
                 
                 if columns_per_page_custom:
                     self._insert_page_breaks_by_columns(sheet, workbook.Name, columns_per_page_custom)
 
                 # ========================================
                 # STEP 7: SETUP HEADER AND FOOTER
-                # Add sheet name to header and row range to footer
+                # Add sheet name to header and row range to header (moved from footer for PDF trimming)
                 # ========================================
                 if print_options.get('print_header_footer', True):
-                    self._setup_header_footer(sheet, workbook.Name)
+                    # Pass print_options and page_ranges to header setup for accurate row tracking
+                    self._setup_header_footer(sheet, workbook.Name, print_options, page_ranges)
                 else:
                     # Clear any existing header/footer
                     self._clear_header_footer(sheet, workbook.Name)
@@ -1095,12 +1157,15 @@ class ExcelConverter:
         except Exception as e:
             logging.warning(f"Could not reset page breaks: {e}")
         
+        page_ranges = None
         if rows_per_page:
             # Fixed rows per page mode
-            self._insert_page_breaks_by_rows(sheet, workbook_name, rows_per_page)
+            page_ranges = self._insert_page_breaks_by_rows(sheet, workbook_name, rows_per_page)
         else:
             # Auto-detect tables (ListObjects) and break after each
             self._insert_page_breaks_by_tables(sheet, workbook_name)
+            
+        return page_ranges
 
     def _insert_page_breaks_by_tables(self, sheet, workbook_name):
         """
@@ -1133,6 +1198,7 @@ class ExcelConverter:
         """
         Insert page breaks intelligently based on rows_per_page configuration.
         Calculates actual row heights and ensures content fits within the page's printable area.
+        Also creates enhanced headers with page-specific row information.
         """
         try:
             used_range = sheet.UsedRange
@@ -1181,10 +1247,12 @@ class ExcelConverter:
                 printable_height = PAGE_SIZES["A4"]["printable_height"]
                 logging.warning(f"[{workbook_name}] {sheet.Name}: Could not read page setup, using A4 defaults: {e}")
             
-            # Page break insertion logic
+            # Page break insertion logic with page range tracking
             rows_in_current_page = 0
             page_count = 1
             last_break_row = start_row
+            page_ranges = []  # Track row ranges for each page
+            current_page_start = start_row
             
             # When rows_per_page is set, use ONLY row count (ignore height calculations)
             if rows_per_page:
@@ -1196,35 +1264,68 @@ class ExcelConverter:
                         # Insert page break after every rows_per_page rows
                         if rows_in_current_page >= rows_per_page and i + 1 < used_rows:
                             next_row_index = row_index + 1
+                            
+                            # Record the page range before inserting break
+                            page_ranges.append({
+                                'page': page_count,
+                                'start_row': current_page_start,
+                                'end_row': row_index,
+                                'row_count': rows_in_current_page
+                            })
+                            
                             try:
                                 sheet.HPageBreaks.Add(Before=sheet.Rows(next_row_index))
                                 page_count += 1
-                                logging.debug(f"[{workbook_name}] {sheet.Name}: Page break at row {next_row_index} (every {rows_per_page} rows)")
+                                logging.debug(f"[{workbook_name}] {sheet.Name}: Page break at row {next_row_index} (page {page_count-1}: rows {current_page_start}-{row_index})")
                                 rows_in_current_page = 0
                                 last_break_row = next_row_index
+                                current_page_start = next_row_index
                             except Exception as e:
                                 logging.warning(f"Could not insert page break at row {next_row_index}: {e}")
                     except Exception as e:
                         logging.warning(f"Error processing row {i}: {e}")
                         continue
+                
+                # Add the final page range
+                if rows_in_current_page > 0:
+                    page_ranges.append({
+                        'page': page_count,
+                        'start_row': current_page_start,
+                        'end_row': start_row + used_rows - 1,
+                        'row_count': rows_in_current_page
+                    })
+                    
             else:
                 # No rows_per_page limit - use height-based calculation only
                 accumulated_height = 0
+                current_page_rows = 0
+                
                 for i in range(used_rows):
                     try:
                         row = used_range.Rows(i + 1)
                         row_height = row.Height
                         row_index = start_row + i
+                        current_page_rows += 1
                         
                         # Check if adding this row would exceed page height
                         if accumulated_height + row_height > printable_height:
+                            # Record the page range before inserting break
+                            page_ranges.append({
+                                'page': page_count,
+                                'start_row': current_page_start,
+                                'end_row': row_index - 1,
+                                'row_count': current_page_rows - 1
+                            })
+                            
                             # Insert page break before this row
                             try:
                                 sheet.HPageBreaks.Add(Before=sheet.Rows(row_index))
                                 page_count += 1
-                                logging.debug(f"[{workbook_name}] {sheet.Name}: Page break at row {row_index} (accumulated: {accumulated_height:.0f}pts, limit: {printable_height:.0f}pts)")
+                                logging.debug(f"[{workbook_name}] {sheet.Name}: Page break at row {row_index} (page {page_count-1}: rows {current_page_start}-{row_index-1})")
                                 accumulated_height = row_height
                                 last_break_row = row_index
+                                current_page_start = row_index
+                                current_page_rows = 1
                             except Exception as e:
                                 logging.warning(f"Could not insert page break at row {row_index}: {e}")
                         else:
@@ -1232,12 +1333,130 @@ class ExcelConverter:
                     except Exception as e:
                         logging.warning(f"Error processing row {i}: {e}")
                         continue
+                
+                # Add the final page range
+                if current_page_rows > 0:
+                    page_ranges.append({
+                        'page': page_count,
+                        'start_row': current_page_start,
+                        'end_row': start_row + used_rows - 1,
+                        'row_count': current_page_rows
+                    })
+            
+            # Log the page ranges for reference
+            if page_ranges:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Page ranges created:")
+                for page_info in page_ranges:
+                    logging.info(f"  Page {page_info['page']}: Rows {page_info['start_row']}-{page_info['end_row']} ({page_info['row_count']} rows)")
             
             avg_rows_per_page = used_rows / page_count if page_count > 0 else used_rows
             logging.info(f"[{workbook_name}] {sheet.Name}: Inserted {page_count - 1} smart page breaks ({avg_rows_per_page:.1f} avg rows/page, max {rows_per_page} rows/page)")
             
+            return page_ranges  # Return page range information for potential use in headers
+            
         except Exception as e:
             logging.warning(f"Error inserting smart row-based page breaks: {e}")
+            return []
+    
+    def _auto_calculate_page_breaks_for_headings(self, sheet, workbook_name):
+        """
+        Automatically calculate page breaks based on print area and page size
+        when rows_per_page is not set but row headings are enabled.
+        This ensures row headings work correctly without manual configuration.
+        """
+        try:
+            used_range = sheet.UsedRange
+            used_rows = used_range.Rows.Count
+            start_row = used_range.Row
+            
+            logging.info(f"[{workbook_name}] {sheet.Name}: Auto-calculating page breaks for row headings (print area: {used_rows} rows)")
+            
+            # Get current page setup to calculate printable height
+            try:
+                page_size_const = sheet.PageSetup.PaperSize
+                orientation = sheet.PageSetup.Orientation
+                
+                # Find matching page size info
+                printable_height = None
+                for size_name, size_info in PAGE_SIZES.items():
+                    if size_info["xl_const"] == page_size_const:
+                        if orientation == xlLandscape:
+                            # For landscape, swap width and height
+                            printable_height = size_info["width"] - 100  # Account for margins
+                        else:
+                            printable_height = size_info["printable_height"]
+                        break
+                
+                # Fallback: use A4 portrait if page size not found
+                if printable_height is None:
+                    printable_height = PAGE_SIZES["A4"]["printable_height"]
+                    logging.warning(f"[{workbook_name}] {sheet.Name}: Could not determine page size, using A4 defaults")
+                
+            except Exception as e:
+                printable_height = PAGE_SIZES["A4"]["printable_height"]
+                logging.warning(f"[{workbook_name}] {sheet.Name}: Could not read page setup, using A4 defaults: {e}")
+            
+            # Calculate automatic page breaks based on actual row heights
+            accumulated_height = 0
+            current_page_rows = 0
+            page_count = 1
+            current_page_start = start_row
+            page_ranges = []
+            
+            for i in range(used_rows):
+                try:
+                    row = used_range.Rows(i + 1)
+                    row_height = row.Height
+                    row_index = start_row + i
+                    current_page_rows += 1
+                    
+                    # Check if adding this row would exceed page height
+                    if accumulated_height + row_height > printable_height:
+                        # Record the page range before breaking
+                        page_ranges.append({
+                            'page': page_count,
+                            'start_row': current_page_start,
+                            'end_row': row_index - 1,
+                            'row_count': current_page_rows - 1
+                        })
+                        
+                        # Insert page break before this row
+                        try:
+                            sheet.HPageBreaks.Add(Before=sheet.Rows(row_index))
+                            page_count += 1
+                            logging.debug(f"[{workbook_name}] {sheet.Name}: Auto page break at row {row_index}")
+                            accumulated_height = row_height
+                            current_page_start = row_index
+                            current_page_rows = 1
+                        except Exception as e:
+                            logging.warning(f"Could not insert auto page break at row {row_index}: {e}")
+                    else:
+                        accumulated_height += row_height
+                except Exception as e:
+                    logging.warning(f"Error processing row {i} for auto page breaks: {e}")
+                    continue
+            
+            # Add the final page range
+            if current_page_rows > 0:
+                page_ranges.append({
+                    'page': page_count,
+                    'start_row': current_page_start,
+                    'end_row': start_row + used_rows - 1,
+                    'row_count': current_page_rows
+                })
+            
+            # Log results
+            if page_ranges:
+                avg_rows_per_page = used_rows / page_count if page_count > 0 else used_rows
+                logging.info(f"[{workbook_name}] {sheet.Name}: Auto page breaks created {len(page_ranges)} pages ({avg_rows_per_page:.1f} avg rows/page)")
+                for pr in page_ranges:
+                    logging.debug(f"[{workbook_name}] {sheet.Name}: Page {pr['page']}: rows {pr['start_row']}-{pr['end_row']} ({pr['row_count']} rows)")
+            
+            return page_ranges
+            
+        except Exception as e:
+            logging.error(f"Error auto-calculating page breaks in {sheet.Name}: {e}")
+            return None
 
     def _insert_page_breaks_by_columns(self, sheet, workbook_name, columns_per_page):
         """
@@ -1495,44 +1714,77 @@ class ExcelConverter:
             except Exception as e:
                 logging.warning(f"Could not apply uniform page size to sheet {sheet.Name}: {e}")
 
-    def _setup_header_footer(self, sheet, workbook_name):
+    def _setup_header_footer(self, sheet, workbook_name, print_options=None, page_ranges=None):
         """
         Setup header and footer for the sheet.
-        Header: Sheet name
-        Footer: Row range (begin to end) for the current page
+        Header: All metadata including sheet name, row tracking, and page info (moved from footer for PDF trimming)
+        Footer: Empty (to avoid content loss during PDF trimming)
         
-        Note: Only includes data from Excel file - no date/time.
-        
-        Excel Header/Footer codes:
-        &A - Sheet name
-        &P - Current page number
-        &N - Total pages
-        &F - File name
+        The row tracking now properly shows page-specific ranges when rows_per_page is configured.
         """
         try:
             # Get used range info for row tracking
             used_range = sheet.UsedRange
             start_row = used_range.Row
             end_row = start_row + used_range.Rows.Count - 1
+            total_rows = used_range.Rows.Count
             
-            # Clear all header/footer sections first (remove any date/time)
+            # Clear all header/footer sections first
             sheet.PageSetup.LeftHeader = ""
             sheet.PageSetup.RightHeader = ""
             sheet.PageSetup.LeftFooter = ""
             sheet.PageSetup.RightFooter = ""
+            sheet.PageSetup.CenterFooter = ""
             
-            # Center Header: Sheet name only
-            # Format: "Sheet: [SheetName]"
-            sheet.PageSetup.CenterHeader = f"&\"Arial,Bold\"Sheet: {sheet.Name}"
+            # Get rows_per_page setting for accurate row tracking
+            rows_per_page = None
+            if print_options:
+                rows_per_page = print_options.get('rows_per_page')
             
-            # Center Footer: Row range and page information only (no date/time)
-            # Format: "Rows: [StartRow] - [EndRow] | Page X of Y"
-            sheet.PageSetup.CenterFooter = f"&\"Arial\"Rows: {start_row} - {end_row} | Page &P of &N"
+            # Setup enhanced header with all metadata (moved from footer for PDF trimming)
+            self._setup_enhanced_header(sheet, workbook_name, start_row, end_row, total_rows, rows_per_page, page_ranges)
             
-            logging.info(f"[{workbook_name}] {sheet.Name}: Set header/footer (Rows {start_row}-{end_row})")
+            logging.info(f"[{workbook_name}] {sheet.Name}: Set enhanced header with metadata (Rows {start_row}-{end_row}, rows_per_page: {rows_per_page})")
             
         except Exception as e:
             logging.warning(f"Could not setup header/footer for {sheet.Name}: {e}")
+    
+    def _setup_enhanced_header(self, sheet, workbook_name, start_row, end_row, total_rows, rows_per_page, page_ranges=None):
+        """
+        Setup enhanced header with page-specific row tracking for better traceability to original file.
+        All metadata moved to header to prevent loss during PDF trimming.
+        """
+        try:
+            # LEFT HEADER: Sheet name with better formatting
+            sheet.PageSetup.LeftHeader = f"&\"Arial,Bold\"&L{sheet.Name}"
+            
+            # CENTER HEADER: Enhanced row tracking with page-specific information
+            if rows_per_page and rows_per_page > 0:
+                if page_ranges and len(page_ranges) > 1:
+                    # Multi-page with specific ranges - provide helpful context
+                    center_text = f"&\"Arial\"&CRows/Page: {rows_per_page} max | Total: {start_row}-{end_row} ({total_rows} rows) | {len(page_ranges)} pages"
+                else:
+                    # Single page or no range data
+                    center_text = f"&\"Arial\"&CRows: {start_row}-{end_row} ({total_rows} rows, {rows_per_page}/page max)"
+            else:
+                # Auto-break or single-page sheets
+                center_text = f"&\"Arial\"&CRows: {start_row}-{end_row} ({total_rows} total rows)"
+            
+            sheet.PageSetup.CenterHeader = center_text
+            
+            # RIGHT HEADER: Page information (moved from footer for PDF trimming safety)
+            sheet.PageSetup.RightHeader = f"&\"Arial\"&RPage &P of &N"
+            
+            # Log page ranges for reference (helps with tracking original file locations)
+            if page_ranges and len(page_ranges) > 1:
+                logging.info(f"[{workbook_name}] {sheet.Name}: Page structure for reference:")
+                for page_info in page_ranges[:5]:  # Log first 5 pages for reference
+                    logging.info(f"  Page {page_info['page']}: Excel rows {page_info['start_row']}-{page_info['end_row']} ({page_info['row_count']} rows)")
+                if len(page_ranges) > 5:
+                    logging.info(f"  ... and {len(page_ranges) - 5} more pages")
+            
+        except Exception as e:
+            logging.warning(f"Could not setup enhanced header for {sheet.Name}: {e}")
 
     def _clear_header_footer(self, sheet, workbook_name):
         """
@@ -1567,6 +1819,7 @@ class ExcelConverter:
         """
         Export workbook to PDF using ExportAsFixedFormat.
         This is the reliable method that works without dialogs.
+        Enhanced handling for multiple images and embedded objects.
         """
         logging.info(f"[{workbook.Name}] Exporting to PDF: {output_path}")
         
@@ -1581,8 +1834,16 @@ class ExcelConverter:
             except:
                 pass
             
-            # Export to PDF using ExportAsFixedFormat
-            # IncludeDocProperties=True for RAG/AI Search metadata
+            # Pre-export analysis and preparation
+            try:
+                prep_info = self._prepare_workbook_for_export(workbook)
+                logging.info(f"[{workbook.Name}] Pre-export analysis: {prep_info['total_shapes']} shapes, {prep_info['problem_shapes']} problematic, {len(prep_info['multi_image_rows'])} multi-image rows")
+            except Exception as e:
+                logging.warning(f"[{workbook.Name}] Warning during export preparation: {e}")
+                prep_info = {'total_shapes': 0, 'problem_shapes': 0, 'multi_image_rows': {}}
+            
+            # Try standard export first
+            logging.info(f"[{workbook.Name}] Attempting standard PDF export...")
             workbook.ExportAsFixedFormat(
                 Type=xlTypePDF,
                 Filename=output_path,
@@ -1595,25 +1856,324 @@ class ExcelConverter:
             # Verify output file was created
             if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
                 file_size = Path(output_path).stat().st_size
-                logging.info(f"[{workbook.Name}] PDF export completed: {output_path} ({file_size} bytes)")
+                logging.info(f"[{workbook.Name}] PDF export completed successfully: {output_path} ({file_size} bytes)")
             else:
                 logging.error(f"[{workbook.Name}] PDF file was not created or is empty: {output_path}")
                 raise Exception(f"ExportAsFixedFormat did not create output file: {output_path}")
                 
         except Exception as e:
             error_message = str(e)
-            if "Current printer is unavailable" in error_message or "-2146827284" in error_message:
+            error_code = str(e)
+            
+            # Enhanced error handling for embedded objects/images issues
+            if ("Document not saved" in error_message or 
+                "-2146827284" in error_code or 
+                "-2147352567" in error_code or
+                "Exception occurred" in error_message):
+                
+                # Detailed error analysis
+                if prep_info['multi_image_rows']:
+                    logging.error(f"[{workbook.Name}] PDF export failed: Multiple images in single rows detected")
+                    logging.error("Problematic rows with multiple images:")
+                    for row_info, shapes in prep_info['multi_image_rows'].items():
+                        logging.error(f"  - {row_info}: {len(shapes)} images")
+                elif prep_info['problem_shapes'] > 0:
+                    logging.error(f"[{workbook.Name}] PDF export failed: {prep_info['problem_shapes']} problematic embedded objects detected")
+                else:
+                    logging.error(f"[{workbook.Name}] PDF export failed: File contains embedded objects/images that cannot be exported")
+                
+                # Try recovery methods
+                logging.error("Attempting recovery methods...")
+                
+                try:
+                    # Method 1: Save and reload approach
+                    logging.info(f"[{workbook.Name}] Recovery Method 1: Save-and-reload approach")
+                    self._export_with_recovery(workbook, output_path)
+                    return  # Success with recovery method
+                except Exception as recovery1_error:
+                    logging.error(f"Recovery Method 1 failed: {recovery1_error}")
+                
+                try:
+                    # Method 2: Shape optimization approach
+                    logging.info(f"[{workbook.Name}] Recovery Method 2: Shape optimization approach")
+                    self._export_with_shape_optimization(workbook, output_path, prep_info)
+                    return  # Success with shape optimization
+                except Exception as recovery2_error:
+                    logging.error(f"Recovery Method 2 failed: {recovery2_error}")
+                
+                # All recovery methods failed
+                logging.error("All recovery methods failed. Detailed troubleshooting:")
+                logging.error("1. The Excel file contains embedded objects/images that cause export issues")
+                logging.error("2. Common causes:")
+                logging.error("   - Multiple images positioned in the same row")
+                logging.error("   - Corrupted embedded OLE objects")
+                logging.error("   - Images with invalid formatting or positioning")
+                logging.error("3. Suggested solutions:")
+                logging.error("   - Open the Excel file and reposition images to separate rows")
+                logging.error("   - Replace problematic images with fresh copies")
+                logging.error("   - Save the file as a new .xlsx format")
+                logging.error("   - Remove and re-insert any OLE objects")
+                    
+            elif "Current printer is unavailable" in error_message or "-2146827284" in error_code:
                 logging.error(f"PDF export failed: Printer configuration issue. This can usually be resolved by:")
                 logging.error("  1. Setting 'Microsoft Print to PDF' as default printer in Windows")
                 logging.error("  2. Restarting Excel applications")  
                 logging.error("  3. Running Windows printer troubleshooter")
                 logging.error(f"  Technical error: {e}")
-            elif "Document not saved" in error_message:
-                logging.error(f"PDF export failed: File access error. Check if file is open elsewhere or permissions. Error: {e}")
-            elif "Exception occurred" in error_message or "-2147352567" in error_message:
-                logging.error(f"PDF export failed: Excel COM automation error. Try closing all Excel windows and retry. Error: {e}")
             else:
-                logging.error(f"PDF export failed: {e}")
+                logging.error(f"PDF export failed with unknown error: {e}")
+            
+            raise
+
+    def _prepare_workbook_for_export(self, workbook):
+        """
+        Prepare workbook for PDF export by handling potential issues with embedded objects/images.
+        Enhanced handling for multiple images in single rows.
+        """
+        try:
+            total_shapes = 0
+            problem_shapes = 0
+            multi_image_rows = {}
+            
+            # Analyze all sheets for potential issues
+            for sheet in workbook.Worksheets:
+                try:
+                    sheet_shapes = 0
+                    sheet_problems = 0
+                    row_image_count = {}
+                    
+                    logging.info(f"[{workbook.Name}] {sheet.Name}: Analyzing shapes/images for export preparation...")
+                    
+                    # Count and analyze shapes per row
+                    for shape in sheet.Shapes:
+                        try:
+                            sheet_shapes += 1
+                            total_shapes += 1
+                            
+                            # Get shape details for logging
+                            shape_type = getattr(shape, 'Type', 'Unknown')
+                            shape_name = getattr(shape, 'Name', 'Unnamed')
+                            
+                            # Determine which row this shape is in
+                            try:
+                                top_left_cell = shape.TopLeftCell
+                                row_num = top_left_cell.Row
+                                
+                                if row_num not in row_image_count:
+                                    row_image_count[row_num] = []
+                                row_image_count[row_num].append({
+                                    'name': shape_name,
+                                    'type': shape_type,
+                                    'shape': shape
+                                })
+                            except:
+                                logging.debug(f"Could not determine row for shape: {shape_name}")
+                            
+                            # Set shape properties for stable export
+                            shape.PrintObject = True
+                            # Ensure shape placement is stable (xlMove = 2)
+                            if hasattr(shape, 'Placement'):
+                                shape.Placement = 2  # Move with cells but don't resize
+                                
+                            # Check for problematic shape types
+                            if shape_type in [13, 14, 15]:  # OLE objects, embedded objects, linked objects
+                                sheet_problems += 1
+                                problem_shapes += 1
+                                logging.warning(f"[{workbook.Name}] {sheet.Name}: Found potentially problematic shape '{shape_name}' (Type: {shape_type}) that may cause export issues")
+                                
+                        except Exception as shape_error:
+                            logging.debug(f"Error analyzing shape: {shape_error}")
+                            continue
+                    
+                    # Analyze rows with multiple images
+                    for row_num, shapes_in_row in row_image_count.items():
+                        if len(shapes_in_row) > 1:
+                            multi_image_rows[f"{sheet.Name}_Row_{row_num}"] = shapes_in_row
+                            logging.warning(f"[{workbook.Name}] {sheet.Name}: Row {row_num} contains {len(shapes_in_row)} images/objects:")
+                            for i, shape_info in enumerate(shapes_in_row, 1):
+                                logging.warning(f"  {i}. '{shape_info['name']}' (Type: {shape_info['type']})")
+                    
+                    if sheet_shapes > 0:
+                        logging.info(f"[{workbook.Name}] {sheet.Name}: Found {sheet_shapes} shapes/images ({sheet_problems} potentially problematic)")
+                    
+                except Exception as sheet_error:
+                    logging.warning(f"Error analyzing sheet {sheet.Name}: {sheet_error}")
+                    continue
+            
+            # Log summary
+            if total_shapes > 0:
+                logging.info(f"[{workbook.Name}] Total shapes/images: {total_shapes} ({problem_shapes} potentially problematic)")
+                
+            if multi_image_rows:
+                logging.warning(f"[{workbook.Name}] Found {len(multi_image_rows)} rows with multiple images - this may cause export issues")
+                
+            # Force calculate all formulas to avoid calculation issues during export
+            try:
+                workbook.Application.CalculateFullRebuild()
+                logging.debug(f"[{workbook.Name}] Force-calculated all formulas for export stability")
+            except:
+                try:
+                    workbook.Application.Calculate()
+                    logging.debug(f"[{workbook.Name}] Calculated formulas for export stability")
+                except:
+                    pass
+                    
+            return {
+                'total_shapes': total_shapes,
+                'problem_shapes': problem_shapes,
+                'multi_image_rows': multi_image_rows
+            }
+                    
+        except Exception as e:
+            logging.error(f"Error in workbook preparation: {e}")
+            return {'total_shapes': 0, 'problem_shapes': 0, 'multi_image_rows': {}}
+    
+    def _export_with_recovery(self, workbook, output_path):
+        """
+        Recovery method for exporting PDFs when standard method fails.
+        Saves workbook to temporary file first, then exports.
+        """
+        temp_file = None
+        try:
+            # Create a temporary Excel file
+            temp_dir = tempfile.gettempdir()
+            temp_name = f"temp_export_{int(time.time())}_{os.getpid()}.xlsx"
+            temp_file = os.path.join(temp_dir, temp_name)
+            
+            logging.info(f"[{workbook.Name}] Saving to temporary file for recovery export: {temp_file}")
+            
+            # Save workbook to temporary file (this often resolves embedded object issues)
+            workbook.SaveAs(temp_file, FileFormat=51)  # 51 = xlOpenXMLWorkbook (.xlsx)
+            
+            # Small delay to ensure file is fully written
+            time.sleep(0.5)
+            
+            # Now try to export the saved workbook
+            workbook.ExportAsFixedFormat(
+                Type=xlTypePDF,
+                Filename=output_path,
+                Quality=xlQualityStandard,
+                IncludeDocProperties=True,
+                IgnorePrintAreas=False,
+                OpenAfterPublish=False
+            )
+            
+            # Verify output file was created
+            if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
+                file_size = Path(output_path).stat().st_size
+                logging.info(f"[{workbook.Name}] PDF export completed with recovery method: {output_path} ({file_size} bytes)")
+            else:
+                raise Exception("Recovery export did not create output file")
+                
+        except Exception as e:
+            logging.error(f"Recovery export method failed: {e}")
+            raise
+        finally:
+            # Clean up temporary file
+            if temp_file and os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                    logging.debug(f"Removed temporary file: {temp_file}")
+                except Exception as e:
+                    logging.warning(f"Could not remove temporary file {temp_file}: {e}")
+    
+    def _export_with_shape_optimization(self, workbook, output_path, prep_info):
+        """
+        Advanced recovery method specifically for handling multiple images and complex shapes.
+        Attempts to optimize shape positioning and properties before export.
+        """
+        try:
+            logging.info(f"[{workbook.Name}] Applying shape optimization for {prep_info['total_shapes']} shapes...")
+            
+            shapes_optimized = 0
+            rows_processed = 0
+            
+            # Process each sheet and optimize shapes
+            for sheet in workbook.Worksheets:
+                try:
+                    sheet_optimized = 0
+                    
+                    # Get all shapes and group by row for optimization
+                    row_shapes = {}
+                    for shape in sheet.Shapes:
+                        try:
+                            top_left_cell = shape.TopLeftCell
+                            row_num = top_left_cell.Row
+                            
+                            if row_num not in row_shapes:
+                                row_shapes[row_num] = []
+                            row_shapes[row_num].append(shape)
+                        except:
+                            continue
+                    
+                    # Optimize rows with multiple images
+                    for row_num, shapes_in_row in row_shapes.items():
+                        if len(shapes_in_row) > 1:
+                            rows_processed += 1
+                            logging.info(f"[{workbook.Name}] {sheet.Name}: Optimizing Row {row_num} with {len(shapes_in_row)} images")
+                            
+                            # Try to optimize each shape in the problematic row
+                            for i, shape in enumerate(shapes_in_row):
+                                try:
+                                    # Reset shape properties for better compatibility
+                                    shape.PrintObject = True
+                                    shape.Placement = 1  # xlMoveAndSize - more flexible for multi-image rows
+                                    
+                                    # Ensure shape is visible
+                                    if hasattr(shape, 'Visible'):
+                                        shape.Visible = True
+                                    
+                                    # Try to adjust positioning slightly to avoid conflicts
+                                    try:
+                                        # Small adjustment to prevent overlap issues
+                                        current_left = shape.Left
+                                        shape.Left = current_left + (i * 0.5)  # Tiny offset
+                                    except:
+                                        pass
+                                        
+                                    sheet_optimized += 1
+                                    shapes_optimized += 1
+                                    
+                                except Exception as shape_error:
+                                    logging.debug(f"Could not optimize shape {i} in row {row_num}: {shape_error}")
+                                    continue
+                    
+                    if sheet_optimized > 0:
+                        logging.info(f"[{workbook.Name}] {sheet.Name}: Optimized {sheet_optimized} shapes")
+                        
+                except Exception as sheet_error:
+                    logging.warning(f"Error optimizing shapes in sheet {sheet.Name}: {sheet_error}")
+                    continue
+            
+            logging.info(f"[{workbook.Name}] Shape optimization completed: {shapes_optimized} shapes optimized in {rows_processed} multi-image rows")
+            
+            # Force recalculation after optimization
+            try:
+                workbook.Application.Calculate()
+                time.sleep(1)  # Allow time for changes to settle
+            except:
+                pass
+            
+            # Now attempt export with optimized shapes
+            logging.info(f"[{workbook.Name}] Attempting PDF export with optimized shapes...")
+            workbook.ExportAsFixedFormat(
+                Type=xlTypePDF,
+                Filename=output_path,
+                Quality=xlQualityStandard,
+                IncludeDocProperties=True,
+                IgnorePrintAreas=False,
+                OpenAfterPublish=False
+            )
+            
+            # Verify output file was created
+            if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
+                file_size = Path(output_path).stat().st_size
+                logging.info(f"[{workbook.Name}] PDF export completed with shape optimization: {output_path} ({file_size} bytes)")
+            else:
+                raise Exception("Shape optimization export did not create output file")
+                
+        except Exception as e:
+            logging.error(f"Shape optimization export method failed: {e}")
             raise
 
     def _autofit_merged_cells(self, sheet, workbook_name):

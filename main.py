@@ -6,21 +6,22 @@ import psutil
 import traceback
 import logging
 from pathlib import Path
-from src.utils import load_config, get_output_path, ensure_dir, copy_to_enhanced
-from src.converter import ExcelConverter
-from src.logger import setup_logger, log_error, log_info, get_queue_logger
+from src.core.utils import load_config, get_output_path, ensure_dir, copy_to_enhanced
+from src.interface import OfficeConverter, ConversionResult
+from src.core.logger import setup_logger, log_error, log_info, get_queue_logger
 from src.ui import create_progress_instance, create_layout, LogConsole, print_summary, print_banner, save_summary_report, Live
-from src.language_detector import LanguageDetector
+from src.core.language_detector import LanguageDetector
 
 def convert_worker(input_path, output_path, config, pid_queue, log_queue, lang_code=None):
     """
     Worker function to run conversion in a separate process.
+    Supports Excel, Word, and PowerPoint files.
     
     Args:
-        input_path: Input Excel file path
+        input_path: Input Office file path
         output_path: Output PDF file path
         config: Configuration dictionary
-        pid_queue: Queue for Excel process PID
+        pid_queue: Queue for Office application process PID
         log_queue: Queue for logging
         lang_code: Detected language code (optional, for logging)
     """
@@ -31,8 +32,13 @@ def convert_worker(input_path, output_path, config, pid_queue, log_queue, lang_c
         if lang_code:
             logging.info(f"[{Path(input_path).name}] Language: {lang_code}")
         
-        converter = ExcelConverter(config)
-        converter.convert(input_path, output_path, pid_queue)
+        # Use the unified converter interface
+        converter = OfficeConverter(config)
+        result = converter.convert(input_path, output_path, pid_queue)
+        
+        if not result.success:
+            raise Exception(result.error or "Conversion failed")
+            
     except Exception:
         # Errors are logged in converter, but we raise to signal failure to parent
         raise
@@ -74,10 +80,11 @@ class UIHandler(logging.Handler):
             self.handleError(record)
 
 def main():
-    parser = argparse.ArgumentParser(description="Excel to PDF Converter")
-    parser.add_argument("--input", default="./input", help="Input directory containing Excel files")
+    parser = argparse.ArgumentParser(description="Office to PDF Converter - Supports Excel, Word, and PowerPoint")
+    parser.add_argument("--input", default="./input", help="Input directory containing Office files")
     parser.add_argument("--output", default="./output", help="Output directory for PDF files")
     parser.add_argument("--config", default="config.yaml", help="Path to configuration file")
+    parser.add_argument("--file-types", default="all", help="File types to convert: all, excel, word, powerpoint, or comma-separated")
     args = parser.parse_args()
 
     # Load Config
@@ -99,6 +106,27 @@ def main():
     # Scan files first
     print("Scanning files...")
     
+    # Define file extensions to scan based on user input
+    file_type_map = {
+        'excel': ('.xls', '.xlsx', '.xlsm', '.xlsb'),
+        'word': ('.doc', '.docx', '.docm', '.dotx', '.dotm'),
+        'powerpoint': ('.ppt', '.pptx', '.pptm', '.ppsx', '.ppsm', '.potx', '.potm')
+    }
+    
+    # Determine which extensions to scan
+    if args.file_types.lower() == 'all':
+        scan_extensions = tuple(ext for exts in file_type_map.values() for ext in exts)
+    else:
+        requested_types = [t.strip().lower() for t in args.file_types.split(',')]
+        scan_extensions = tuple(ext for file_type in requested_types 
+                               if file_type in file_type_map 
+                               for ext in file_type_map[file_type])
+    
+    if not scan_extensions:
+        print(f"Error: Invalid file types specified: {args.file_types}")
+        print(f"Valid options: all, excel, word, powerpoint")
+        return
+    
     # Directories to exclude from scan to prevent loops or processing intermediate files
     # We primarily want to exclude the enhanced_files directory because it contains copy of xlsx files
     exclude_dirs = set()
@@ -107,19 +135,25 @@ def main():
     
     # Also exclude hidden directories and venv
     
-    excel_files = []
+    office_files = []
     for root, dirs, files in os.walk(input_root):
         # Filter directories in-place
         dirs[:] = [d for d in dirs if os.path.abspath(os.path.join(root, d)) not in exclude_dirs and not d.startswith('.')]
         
         for file in files:
-            if file.lower().endswith(('.xls', '.xlsx', '.xlsm')):
+            if file.lower().endswith(scan_extensions):
                 if not file.startswith('~$'): # Ignore temp files
                     # Check against excluded dirs for current root
                     if not any(os.path.abspath(root).startswith(ex_dir) for ex_dir in exclude_dirs):
-                        excel_files.append(os.path.join(root, file))
+                        office_files.append(os.path.join(root, file))
 
-    total_files = len(excel_files)
+    total_files = len(office_files)
+    
+    if total_files == 0:
+        print(f"No files found with extensions: {scan_extensions}")
+        return
+    
+    print(f"Found {total_files} Office file(s) to convert")
     
     # Setup UI Components
     log_console_lines = config.get('logging', {}).get('log_console_lines', 20)
@@ -160,12 +194,14 @@ def main():
     with Live(layout, refresh_per_second=10):
         task = progress.add_task("[cyan]Converting...", total=total_files)
         
-        for input_path in excel_files:
+        for input_path in office_files:
             # Check queue before starting (optional)
             
             file_to_convert = input_path
             
-            if prepare_for_print:
+            # Only prepare Excel files for print if enabled
+            is_excel = input_path.lower().endswith(('.xls', '.xlsx', '.xlsm', '.xlsb'))
+            if is_excel and prepare_for_print:
                 progress.update(task, description=f"[cyan]Preparing: {os.path.basename(input_path)}")
                 # We can log this too
                 log_info(f"[{os.path.basename(input_path)}] Preparing for print")

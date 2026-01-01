@@ -895,7 +895,8 @@ class ExcelConverter(BaseConverter):
 
                 # ========================================
                 # STEP 7: SETUP HEADER AND FOOTER
-                # Add sheet name to header and row range to header (moved from footer for PDF trimming)
+                # Add sheet name to header and row range with calculated page structure
+                # Row indices are now written directly to sheet content and header
                 # ========================================
                 if print_options.get('print_header_footer', True):
                     # Pass print_options and page_ranges to header setup for accurate row tracking
@@ -905,8 +906,9 @@ class ExcelConverter(BaseConverter):
                     self._clear_header_footer(sheet, workbook.Name)
 
                 # ========================================
-                # STEP 8: ROW AND COLUMN HEADINGS
-                # Print Excel row numbers (1,2,3...) and column letters (A,B,C...)
+                # STEP 8: ROW AND COLUMN HEADINGS (OPTIONAL)
+                # Excel's built-in PrintHeadings feature shows row numbers (1,2,3...) and column letters
+                # This works alongside the new calculated row index header system
                 # ========================================
                 print_headings = print_options.get('print_row_col_headings', False)
                 self._set_row_col_headings(sheet, workbook.Name, print_headings)
@@ -1751,11 +1753,8 @@ class ExcelConverter(BaseConverter):
 
     def _setup_header_footer(self, sheet, workbook_name, print_options=None, page_ranges=None):
         """
-        Setup header and footer for the sheet.
-        Header: All metadata including sheet name, row tracking, and page info (moved from footer for PDF trimming)
-        Footer: Empty (to avoid content loss during PDF trimming)
-        
-        The row tracking now properly shows page-specific ranges when rows_per_page is configured.
+        Setup header and footer for the sheet with calculated row index information.
+        If page_ranges is provided, adds row index information to the sheet for each page.
         """
         try:
             # Get used range info for row tracking
@@ -1776,50 +1775,106 @@ class ExcelConverter(BaseConverter):
             if print_options:
                 rows_per_page = print_options.get('rows_per_page')
             
-            # Setup enhanced header with all metadata (moved from footer for PDF trimming)
+            # If page_ranges is available, add row index info to sheet and header
+            if page_ranges and len(page_ranges) > 0:
+                self._add_row_index_to_header(sheet, workbook_name, page_ranges)
+            
+            # Setup enhanced header with all metadata
             self._setup_enhanced_header(sheet, workbook_name, start_row, end_row, total_rows, rows_per_page, page_ranges)
             
-            logging.info(f"[{workbook_name}] {sheet.Name}: Set enhanced header with metadata (Rows {start_row}-{end_row}, rows_per_page: {rows_per_page})")
+            logging.info(f"[{workbook_name}] {sheet.Name}: Set header with row index metadata")
             
         except Exception as e:
             logging.warning(f"Could not setup header/footer for {sheet.Name}: {e}")
     
     def _setup_enhanced_header(self, sheet, workbook_name, start_row, end_row, total_rows, rows_per_page, page_ranges=None):
         """
-        Setup enhanced header with page-specific row tracking for better traceability to original file.
-        All metadata moved to header to prevent loss during PDF trimming.
+        Setup enhanced header with calculated page structure and row indices.
+        Shows the exact row index mapping for RAG metadata extraction.
         """
         try:
-            # LEFT HEADER: Sheet name with better formatting
+            # LEFT HEADER: Sheet name
             sheet.PageSetup.LeftHeader = f"&\"Arial,Bold\"&L{sheet.Name}"
             
-            # CENTER HEADER: Enhanced row tracking with page-specific information
-            if rows_per_page and rows_per_page > 0:
-                if page_ranges and len(page_ranges) > 1:
-                    # Multi-page with specific ranges - provide helpful context
-                    center_text = f"&\"Arial\"&CRows/Page: {rows_per_page} max | Total: {start_row}-{end_row} ({total_rows} rows) | {len(page_ranges)} pages"
-                else:
-                    # Single page or no range data
-                    center_text = f"&\"Arial\"&CRows: {start_row}-{end_row} ({total_rows} rows, {rows_per_page}/page max)"
+            # CENTER HEADER: Display page structure with row indices
+            if page_ranges and len(page_ranges) > 1:
+                # Build page structure summary for header
+                page_summary = ", ".join([
+                    f"P{p['page']}:R{p['start_row']}-{p['end_row']}"
+                    for p in page_ranges[:3]  # Show first 3 pages in header
+                ])
+                if len(page_ranges) > 3:
+                    page_summary += f", ...+{len(page_ranges)-3}pages"
+                center_text = f"&\"Arial,Bold\"&C{page_summary}"
+            elif page_ranges and len(page_ranges) == 1:
+                # Single page
+                p = page_ranges[0]
+                center_text = f"&\"Arial,Bold\"&CRows {p['start_row']}-{p['end_row']} ({p['row_count']} rows)"
             else:
-                # Auto-break or single-page sheets
-                center_text = f"&\"Arial\"&CRows: {start_row}-{end_row} ({total_rows} total rows)"
+                # No page structure available
+                center_text = f"&\"Arial\"&CRows {start_row}-{end_row} ({total_rows} total)"
             
             sheet.PageSetup.CenterHeader = center_text
             
-            # RIGHT HEADER: Page information (moved from footer for PDF trimming safety)
+            # RIGHT HEADER: Page number
             sheet.PageSetup.RightHeader = f"&\"Arial\"&RPage &P of &N"
             
-            # Log page ranges for reference (helps with tracking original file locations)
-            if page_ranges and len(page_ranges) > 1:
-                logging.info(f"[{workbook_name}] {sheet.Name}: Page structure for reference:")
-                for page_info in page_ranges[:5]:  # Log first 5 pages for reference
-                    logging.info(f"  Page {page_info['page']}: Excel rows {page_info['start_row']}-{page_info['end_row']} ({page_info['row_count']} rows)")
-                if len(page_ranges) > 5:
-                    logging.info(f"  ... and {len(page_ranges) - 5} more pages")
+            # Log complete page structure for RAG metadata
+            if page_ranges and len(page_ranges) > 0:
+                logging.info(f"[{workbook_name}] {sheet.Name}: RAG METADATA - Page-to-Row Index Mapping:")
+                for page_info in page_ranges:
+                    logging.info(f"  Page {page_info['page']}: Rows {page_info['start_row']}-{page_info['end_row']} ({page_info['row_count']} rows)")
             
         except Exception as e:
             logging.warning(f"Could not setup enhanced header for {sheet.Name}: {e}")
+    
+    def _add_row_index_to_header(self, sheet, workbook_name, page_ranges):
+        """
+        Add row index information as text at the start of each page.
+        Uses Excel's PrintTitleRows to repeat header row with page info on each page.
+        """
+        try:
+            if not page_ranges or len(page_ranges) == 0:
+                return
+            
+            # Get the first empty column to add row index info
+            used_range = sheet.UsedRange
+            last_col = used_range.Column + used_range.Columns.Count
+            row_index_col = last_col + 1  # Add to next column after content
+            
+            # Add header label in first row
+            first_row = used_range.Row
+            header_cell = sheet.Cells(first_row, row_index_col)
+            header_cell.Value = "Page-Row Index"
+            header_cell.Font.Bold = True
+            header_cell.Interior.Color = 0xD3D3D3  # Light gray background
+            
+            # Add row index information at each page break
+            for page_info in page_ranges:
+                page_num = page_info['page']
+                page_start_row = page_info['start_row']
+                page_end_row = page_info['end_row']
+                
+                # Add text at the start row of this page
+                cell = sheet.Cells(page_start_row, row_index_col)
+                cell.Value = f"P{page_num}: R{page_start_row}-{page_end_row}"
+                cell.Font.Bold = True
+                cell.Font.Color = 0x0000FF  # Blue text
+            
+            # Auto-fit the column width
+            sheet.Columns(row_index_col).AutoFit()
+            
+            # Set this row as print title (repeats on every page)
+            try:
+                title_range = f"${chr(64 + row_index_col)}$1:${chr(64 + row_index_col)}$1"
+                sheet.PageSetup.PrintTitleRows = f"$1:$1"  # Repeat first row on all pages
+                sheet.PageSetup.PrintTitleColumns = f"${chr(64 + row_index_col)}:${chr(64 + row_index_col)}"  # Repeat index column
+                logging.info(f"[{workbook_name}] {sheet.Name}: Added row index column with page structure")
+            except Exception as e:
+                logging.warning(f"Could not set print titles: {e}")
+            
+        except Exception as e:
+            logging.warning(f"Could not add row index to header for {sheet.Name}: {e}")
 
     def _clear_header_footer(self, sheet, workbook_name):
         """
@@ -1840,13 +1895,18 @@ class ExcelConverter(BaseConverter):
         """
         Enable or disable printing of row numbers (1,2,3...) on left
         and column letters (A,B,C...) on top of the printed page.
+        
+        This is Excel's built-in PrintHeadings feature that works alongside
+        the new calculated row index header system. Both can be used together:
+        - PrintHeadings: Shows Excel's built-in row/column labels (1,2,3... A,B,C...)
+        - Row Index Header: Shows calculated page structure with actual row ranges
         """
         try:
             sheet.PageSetup.PrintHeadings = enable
             if enable:
-                logging.info(f"[{workbook_name}] {sheet.Name}: Enabled row/column headings")
+                logging.info(f"[{workbook_name}] {sheet.Name}: ✓ Excel row/column headings ENABLED (1,2,3... A,B,C...)")
             else:
-                logging.info(f"[{workbook_name}] {sheet.Name}: Disabled row/column headings")
+                logging.info(f"[{workbook_name}] {sheet.Name}: Excel row/column headings disabled")
         except Exception as e:
             logging.warning(f"Could not set row/column headings for {sheet.Name}: {e}")
 

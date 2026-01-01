@@ -105,9 +105,14 @@ print_options:
 #     footer: 0.76
   
 #   # Header/Footer options
-#   print_header_footer: true     # Enable/disable header and footer with sheet name and row range
-#   # Row and Column Headings (Excel row numbers on left, column letters on top)
-#   print_row_col_headings: false # Print Excel row numbers (1,2,3...) and column letters (A,B,C...)
+  print_header_footer: true     # Enable/disable header with sheet name and calculated row index mapping
+                                # When enabled with rows_per_page, shows page structure (e.g., "P1:R2-31, P2:R32-61, P3:R62-91")
+                                # Also adds a "Page-Row Index" column to sheet with row ranges for RAG metadata
+  # Row and Column Headings (Excel's built-in feature - works alongside calculated row index header)
+  print_row_col_headings: false # Print Excel row numbers (1,2,3...) and column letters (A,B,C...) on page margins
+                                # This is Excel's native PrintHeadings feature that shows on left/top of pages
+                                # Can be used together with the calculated row index header system above
+                                # false = disabled (default), true = shows Excel's built-in row/column labels
 
 # Word document conversion options
 word_options:

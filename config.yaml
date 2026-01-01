@@ -1,5 +1,5 @@
-timeout_minutes: 45
-output_suffix: "_x"
+timeout_minutes: 60
+# output_suffix: "_x"  # Deprecated - use file-type specific suffixes in excel/word_options/powerpoint_options
 logging:
   logs_folder: "logs"     # Directory to store log files (default: ./logs)
   log_file: "conversion.log"
@@ -10,6 +10,8 @@ logging:
 # Excel processing configuration
 excel:
   prepare_for_print: false  # Disable copying files to enhanced_files directory
+  temp_folder: "./temp"     # Temporary folder for intermediate files (e.g., .xls to .xlsx conversion)
+  output_suffix: "_x"       # Suffix to append to Excel PDF output filenames
 
 # Print options for PDF conversion per sheet
 # Supports multiple configurations - list format applies different settings to different sheets
@@ -109,6 +111,7 @@ print_options:
 
 # Word document conversion options
 word_options:
+  output_suffix: "_d"                # Suffix to append to Word PDF output filenames
   create_bookmarks: true              # Create PDF bookmarks from headings (improves navigation)
   optimize_for_print: true            # Optimize PDF for print quality (vs screen quality)
   include_doc_properties: true        # Include document properties (author, title, etc.) in PDF metadata
@@ -116,6 +119,7 @@ word_options:
 
 # PowerPoint presentation conversion options
 powerpoint_options:
+  output_suffix: "_p"                # Suffix to append to PowerPoint PDF output filenames
   output_type: "slides"               # Output type: "slides", "notes" (with speaker notes), "handouts" (multiple slides per page)
   handout_order: "vertical"           # Handout layout order: "vertical" (top to bottom) or "horizontal" (left to right)
   slides_per_page: 1                  # Slides per page for handouts: 1, 2, 3, 4, 6, or 9

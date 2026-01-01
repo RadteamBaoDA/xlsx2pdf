@@ -152,7 +152,8 @@ class OfficeConverter:
         return {
             'excel': {
                 'prepare_for_print': True,
-                'enhanced_dir': 'enhanced_files'
+                'enhanced_dir': 'enhanced_files',
+                'output_suffix': '_x'
             },
             'print_options': {
                 'mode': 'auto',
@@ -167,12 +168,14 @@ class OfficeConverter:
                 'min_margin': 5
             },
             'word_options': {
+                'output_suffix': '_d',
                 'create_bookmarks': True,
                 'optimize_for_print': True,
                 'include_doc_properties': True,
                 'keep_form_fields': True
             },
             'powerpoint_options': {
+                'output_suffix': '_p',
                 'output_type': 'slides',
                 'handout_order': 'vertical',
                 'slides_per_page': 1,
@@ -219,6 +222,27 @@ class OfficeConverter:
         converter = self._converters.get(file_type)
         
         return converter, file_type
+    
+    def get_output_suffix(self, file_path: str) -> str:
+        """
+        Get the output suffix for a file based on its type.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            str: The suffix to append (e.g., '_x', '_d', '_p')
+        """
+        _, file_type = self.get_converter(file_path)
+        
+        if file_type == 'excel':
+            return self.config.get('excel', {}).get('output_suffix', '_x')
+        elif file_type == 'word':
+            return self.config.get('word_options', {}).get('output_suffix', '_d')
+        elif file_type == 'powerpoint':
+            return self.config.get('powerpoint_options', {}).get('output_suffix', '_p')
+        else:
+            return '_x'  # Default fallback
     
     def is_supported(self, file_path: str) -> bool:
         """
@@ -335,10 +359,14 @@ class OfficeConverter:
                 # Preserve folder structure
                 rel_path = os.path.relpath(input_file, base_dir)
                 output_path = os.path.join(output_dir, rel_path)
-                output_path = os.path.splitext(output_path)[0] + '.pdf'
+                # Remove original extension and add suffix + .pdf
+                base_name = os.path.splitext(output_path)[0]
+                suffix = self.get_output_suffix(input_file)
+                output_path = f"{base_name}{suffix}.pdf"
             else:
                 # Flatten structure
-                filename = Path(input_file).stem + '.pdf'
+                suffix = self.get_output_suffix(input_file)
+                filename = Path(input_file).stem + suffix + '.pdf'
                 output_path = os.path.join(output_dir, filename)
             
             tasks.append((input_file, output_path))

@@ -235,23 +235,29 @@ class ExcelConverter(BaseConverter):
                 logging.error(f"Failed to open workbook {input_path}: {e}")
                 raise e
 
-            # If the input is an .xlsm (macro-enabled) file, convert it to .xlsx first
+            # If the input is an .xlsm or .xls (macro-enabled/old format) file, convert it to .xlsx first
             temp_converted = None
             try:
-                if str(input_path).lower().endswith('.xlsm'):
+                input_ext = str(input_path).lower()
+                if input_ext.endswith('.xlsm') or input_ext.endswith('.xls'):
                     try:
-                        tmp = tempfile.gettempdir()
+                        # Get temp folder from config, default to ./temp
+                        temp_folder = self.config.get('excel', {}).get('temp_folder', './temp')
+                        ensure_dir(temp_folder)
+                        
                         base = Path(input_path).stem
-                        tmp_xlsx = os.path.join(tmp, f"{base}_xlsm_conv_{int(time.time())}.xlsx")
+                        file_type = 'xlsm' if input_ext.endswith('.xlsm') else 'xls'
+                        tmp_xlsx = os.path.join(temp_folder, f"{base}_{file_type}_conv_{int(time.time())}.xlsx")
+                        
                         # FileFormat=51 => xlOpenXMLWorkbook (.xlsx)
                         workbook.SaveAs(tmp_xlsx, FileFormat=51)
                         workbook.Close(SaveChanges=False)
                         # Reopen the converted xlsx for processing
                         workbook = excel.Workbooks.Open(tmp_xlsx, UpdateLinks=0, ReadOnly=False, IgnoreReadOnlyRecommended=True)
                         temp_converted = tmp_xlsx
-                        logging.info(f"Converted .xlsm to .xlsx for processing: {tmp_xlsx}")
+                        logging.info(f"Converted .{file_type} to .xlsx for processing: {tmp_xlsx}")
                     except Exception as e:
-                        logging.warning(f"Could not convert .xlsm to .xlsx: {e}")
+                        logging.warning(f"Could not convert .{file_type} to .xlsx: {e}")
             except Exception:
                 pass
 

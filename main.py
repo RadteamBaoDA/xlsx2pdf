@@ -12,6 +12,31 @@ from src.core.logger import setup_logger, log_error, log_info, get_queue_logger
 from src.ui import create_progress_instance, create_layout, LogConsole, print_summary, print_banner, save_summary_report, Live
 from src.core.language_detector import LanguageDetector
 
+def get_file_type_suffix(file_path, config):
+    """
+    Get the output suffix based on file type.
+    
+    Args:
+        file_path: Path to the input file
+        config: Configuration dictionary
+        
+    Returns:
+        str: The appropriate suffix (_x for Excel, _d for Word, _p for PowerPoint)
+    """
+    ext = Path(file_path).suffix.lower()
+    
+    # Excel files
+    if ext in ['.xlsx', '.xls', '.xlsm', '.xlsb']:
+        return config.get('excel', {}).get('output_suffix', '_x')
+    # Word files
+    elif ext in ['.docx', '.doc', '.docm', '.dotx', '.dotm']:
+        return config.get('word_options', {}).get('output_suffix', '_d')
+    # PowerPoint files
+    elif ext in ['.pptx', '.ppt', '.pptm', '.ppsx', '.ppsm', '.potx', '.potm']:
+        return config.get('powerpoint_options', {}).get('output_suffix', '_p')
+    else:
+        return config.get('output_suffix', '_x')  # Default fallback
+
 def convert_worker(input_path, output_path, config, pid_queue, log_queue, lang_code=None):
     """
     Worker function to run conversion in a separate process.
@@ -222,21 +247,25 @@ def main():
                     # For filename mode, detect before opening workbook
                     if lang_detector.mode == 'filename':
                         lang_code = lang_detector.classify_file(input_path)
-                        output_path = lang_detector.get_output_path(input_path, output_root, lang_code)
+                        suffix = get_file_type_suffix(input_path, config)
+                        output_path = lang_detector.get_output_path_with_suffix(input_path, output_root, lang_code, suffix)
                     else:
                         # For auto mode, we need to detect from content (will be done in worker if needed)
                         # For now, use filename as fallback
                         lang_code = lang_detector.detect_language_from_filename(Path(input_path).stem)
-                        output_path = lang_detector.get_output_path(input_path, output_root, lang_code)
+                        suffix = get_file_type_suffix(input_path, config)
+                        output_path = lang_detector.get_output_path_with_suffix(input_path, output_root, lang_code, suffix)
                     
                     # Track language distribution
                     lang_distribution[lang_code] = lang_distribution.get(lang_code, 0) + 1
                     
                 except Exception as e:
                     log_error(input_path, f"Language detection failed: {e}")
-                    output_path = get_output_path(input_path, input_root, output_root, config.get('output_suffix', '_x'))
+                    suffix = get_file_type_suffix(input_path, config)
+                    output_path = get_output_path(input_path, input_root, output_root, suffix)
             else:
-                output_path = get_output_path(input_path, input_root, output_root, config.get('output_suffix', '_x'))
+                suffix = get_file_type_suffix(input_path, config)
+                output_path = get_output_path(input_path, input_root, output_root, suffix)
             
             progress.update(task, description=f"[cyan]Processing: {os.path.basename(input_path)}")
             # Log separation

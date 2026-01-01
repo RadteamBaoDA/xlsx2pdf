@@ -248,3 +248,49 @@ class LanguageDetector:
         output_filename = f"{input_file.stem}{output_suffix}.pdf"
         
         return str(output_dir / output_filename)
+    
+    def get_output_path_with_suffix(self, input_path, output_root, lang_code, suffix='_x'):
+        """
+        Generates output path for a given input file, language code, and custom suffix.
+        
+        Args:
+            input_path: Path to input file
+            output_root: Root output directory (will be adjusted based on language)
+            lang_code: Detected language code
+            suffix: File type suffix (e.g., '_x' for Excel, '_d' for Word, '_p' for PowerPoint)
+            
+        Returns:
+            Output file path in language-specific directory
+        """
+        input_file = Path(input_path)
+        
+        # Build language-specific output folder
+        base_output = Path(output_root) / self.output_format.format(lang=lang_code)
+        
+        # Determine output directory
+        if not self.keep_structure:
+            output_dir = base_output
+        else:
+            output_dir = base_output
+        
+        # Get relative path from input directory if maintaining structure
+        if self.keep_structure and len(input_file.parents) > 1:
+            try:
+                rel_parts = []
+                current = input_file.parent
+                
+                if current.name and current.name not in ['input', 'Input', '.']:
+                    rel_parts.insert(0, current.name)
+                
+                if rel_parts:
+                    output_dir = output_dir / Path(*rel_parts)
+            except:
+                pass
+        
+        # Ensure output directory exists
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate output filename with provided suffix
+        output_filename = f"{input_file.stem}{suffix}.pdf"
+        
+        return str(output_dir / output_filename)

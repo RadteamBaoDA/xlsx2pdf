@@ -111,20 +111,83 @@ class OfficeConverter:
         Initialize the Office converter.
         
         Args:
-            config: Configuration dictionary. If None, loads from default config.yaml
+            config: Configuration dictionary. If None, tries to load from config.yaml,
+                   falls back to default settings if config.yaml not found.
+                   
+        Examples:
+            # Use default settings (no config file needed)
+            converter = OfficeConverter()
+            
+            # Pass custom config dictionary
+            converter = OfficeConverter({
+                'word_options': {'create_bookmarks': True},
+                'excel': {'prepare_for_print': False}
+            })
+            
+            # Load from file
+            from src.core import load_config
+            converter = OfficeConverter(load_config('my_config.yaml'))
         """
         if config is None:
             try:
                 config = load_config()
+                logging.info("Loaded configuration from config.yaml")
             except Exception as e:
-                logging.warning(f"Could not load config, using defaults: {e}")
-                config = {}
+                logging.info(f"No config file found, using default settings: {e}")
+                config = self._get_default_config()
         
         self.config = config
         
         # Initialize converters (lazy initialization for better performance)
         self._converters = {}
         self._initialize_converters()
+    
+    def _get_default_config(self) -> Dict[str, Any]:
+        """
+        Get default configuration when no config file is provided.
+        
+        Returns:
+            Dictionary with sensible default settings
+        """
+        return {
+            'excel': {
+                'prepare_for_print': True,
+                'enhanced_dir': 'enhanced_files'
+            },
+            'print_options': {
+                'mode': 'auto',
+                'page_size': 'A4',
+                'orientation': 'auto',
+                'scaling': 'fit_columns',
+                'margins': 'normal'
+            },
+            'pdf_trim': {
+                'enabled': True,
+                'margin_threshold': 10,
+                'min_margin': 5
+            },
+            'word_options': {
+                'create_bookmarks': True,
+                'optimize_for_print': True,
+                'include_doc_properties': True,
+                'keep_form_fields': True
+            },
+            'powerpoint_options': {
+                'output_type': 'slides',
+                'handout_order': 'vertical',
+                'slides_per_page': 1,
+                'include_hidden_slides': False,
+                'frame_slides': False,
+                'print_comments': False
+            },
+            'logging': {
+                'log_file': 'conversion.log',
+                'error_file': 'errors.log',
+                'log_level': 'INFO',
+                'logs_folder': 'logs'
+            },
+            'timeout_minutes': 45
+        }
     
     def _initialize_converters(self):
         """Initialize converter instances."""

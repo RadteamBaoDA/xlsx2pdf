@@ -107,6 +107,22 @@ print_options:
 #   # Row and Column Headings (Excel row numbers on left, column letters on top)
 #   print_row_col_headings: false # Print Excel row numbers (1,2,3...) and column letters (A,B,C...)
 
+# Word document conversion options
+word_options:
+  create_bookmarks: true              # Create PDF bookmarks from headings (improves navigation)
+  optimize_for_print: true            # Optimize PDF for print quality (vs screen quality)
+  include_doc_properties: true        # Include document properties (author, title, etc.) in PDF metadata
+  keep_form_fields: true              # Preserve form fields in the PDF (allows filling in PDF)
+
+# PowerPoint presentation conversion options
+powerpoint_options:
+  output_type: "slides"               # Output type: "slides", "notes" (with speaker notes), "handouts" (multiple slides per page)
+  handout_order: "vertical"           # Handout layout order: "vertical" (top to bottom) or "horizontal" (left to right)
+  slides_per_page: 1                  # Slides per page for handouts: 1, 2, 3, 4, 6, or 9
+  include_hidden_slides: false        # Include hidden slides in the PDF output
+  frame_slides: false                 # Add frame/border around slides in PDF
+  print_comments: false               # Include comments in the PDF output
+
 # Language classification and distribution
 language_classification:
   enabled: false              # Enable/disable language classification

@@ -1,6 +1,5 @@
 timeout_minutes: 45
 output_suffix: "_x"
-empty_row_lookahead: 10  # Number of consecutive empty rows to check before truncating print area (default: 10)
 logging:
   logs_folder: "logs"     # Directory to store log files (default: ./logs)
   log_file: "conversion.log"
@@ -31,6 +30,7 @@ print_options:
     orientation: "landscape"
     print_header_footer: false
     print_row_col_headings: false
+    empty_row_lookahead: 10            # Number of consecutive empty rows to check before truncating print area
   - sheets: ['Spec']  # Apply these settings to Summary and Dashboard sheets
     priority: 2                        # Highest priority
     mode: "auto"
@@ -40,6 +40,7 @@ print_options:
     orientation: "landscape"
     print_header_footer: false
     print_row_col_headings: false
+    empty_row_lookahead: 10            # Number of consecutive empty rows to check before truncating print area
   - sheets: null                       # Default config for all other sheets (no sheets specified)
     priority: 99                       # Lowest priority (default fallback)
     mode: "auto"
@@ -51,6 +52,7 @@ print_options:
     page_size: "TABLOID"               # Tabloid: 11x17 inches (largest commonly supported)
     print_header_footer: true
     print_row_col_headings: true
+    empty_row_lookahead: 10            # Number of consecutive empty rows to check before truncating print area
 
 # Single print_options (applies to all sheets):
 # print_options:
@@ -129,4 +131,5 @@ pdf_trim:
   min_margin: 5                          # Minimum margin to keep after trimming (in points)
   create_backup: false                   # Create backup copy of original PDF before trimming
   backup_suffix: "_original"             # Suffix for backup files (only if create_backup: true)
+  trim_sides: ["bottom"]                 # Which sides to trim: top, bottom, left, right (only trim bottom to remove empty white space)
 

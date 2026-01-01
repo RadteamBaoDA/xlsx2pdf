@@ -1,0 +1,29 @@
+# HR Department Configuration
+# Optimized for Word documents with bookmarks
+
+timeout_minutes: 45
+
+excel:
+  prepare_for_print: false
+
+print_options:
+  mode: "auto"
+  page_size: "LETTER"
+  orientation: "portrait"
+  scaling: "fit_columns"
+  margins: "normal"
+
+word_options:
+  create_bookmarks: true
+  optimize_for_print: true
+  include_doc_properties: true
+  keep_form_fields: true
+
+powerpoint_options:
+  output_type: "slides"
+  include_hidden_slides: false
+
+pdf_trim:
+  enabled: true
+  trim_sides: ["top", "bottom"]
+  margin_threshold: 15

@@ -1,0 +1,29 @@
+# Finance Department Configuration
+# Optimized for Excel spreadsheets with detailed layouts
+
+timeout_minutes: 60
+
+excel:
+  prepare_for_print: true
+
+print_options:
+  mode: "auto"
+  page_size: "TABLOID"
+  orientation: "landscape"
+  scaling: "fit_columns"
+  margins: "narrow"
+  print_header_footer: true
+  print_row_col_headings: true
+  rows_per_page: 50
+
+word_options:
+  create_bookmarks: true
+  optimize_for_print: true
+
+powerpoint_options:
+  output_type: "slides"
+  include_hidden_slides: false
+
+pdf_trim:
+  enabled: true
+  trim_sides: ["bottom"]

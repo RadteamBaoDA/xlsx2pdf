@@ -1,0 +1,12 @@
+# Simple Scenario - One config for all folders
+name: "Simple Multi-Folder Conversion"
+description: "Convert files from multiple input folders using the same settings"
+
+groups:
+  - name: "All Documents"
+    folders:
+      - "./input/folder1"
+      - "./input/folder2"
+      - "./input/folder3"
+    output: "./output/all_pdfs"
+    config: "./config.yaml"  # Use main config file

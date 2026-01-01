@@ -1,0 +1,28 @@
+# Marketing Department Configuration
+# Optimized for PowerPoint presentations with notes
+
+timeout_minutes: 30
+
+excel:
+  prepare_for_print: false
+
+print_options:
+  mode: "one_page"
+  page_size: "A4"
+  orientation: "portrait"
+
+word_options:
+  create_bookmarks: true
+  optimize_for_print: true
+  include_doc_properties: true
+
+powerpoint_options:
+  output_type: "notes"  # Include speaker notes
+  include_hidden_slides: false
+  frame_slides: true
+  print_comments: false
+  handout_order: "vertical"
+  slides_per_page: 1
+
+pdf_trim:
+  enabled: false

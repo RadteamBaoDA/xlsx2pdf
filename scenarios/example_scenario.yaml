@@ -1,0 +1,60 @@
+# Scenario Configuration Example
+#
+# A scenario allows you to convert files from multiple folders with different settings.
+# Each group defines input folders, output location, and specific conversion config.
+
+# Scenario metadata
+name: "Multi-Department Conversion"
+description: "Convert documents from different departments with appropriate settings"
+
+# Groups: Each group has its own folders and configuration
+groups:
+  # Group 1: Finance Department - Excel heavy, needs detailed settings
+  - name: "Finance"
+    folders:
+      - "./input/finance"
+      - "./input/accounting"
+    output: "./output/finance_pdfs"
+    config: "./configs/finance_config.yaml"  # Path to config file for this group
+  
+  # Group 2: Marketing Department - PowerPoint presentations
+  - name: "Marketing"
+    folders:
+      - "./input/marketing"
+    output: "./output/marketing_pdfs"
+    config: "./configs/marketing_config.yaml"
+  
+  # Group 3: HR Department - Word documents
+  - name: "HR"
+    folders:
+      - "./input/hr"
+      - "./input/hr_archive"
+    output: "./output/hr_pdfs"
+    config: "./configs/hr_config.yaml"
+  
+  # Group 4: Mixed files with inline config (no separate config file)
+  - name: "General"
+    folders:
+      - "./input/general"
+    output: "./output/general_pdfs"
+    config_inline:  # Inline config instead of separate file
+      excel:
+        prepare_for_print: false
+      print_options:
+        mode: "auto"
+        page_size: "A4"
+        orientation: "auto"
+      word_options:
+        create_bookmarks: true
+        optimize_for_print: true
+      powerpoint_options:
+        output_type: "slides"
+        include_hidden_slides: false
+      pdf_trim:
+        enabled: true
+
+# Notes:
+# - Files are automatically recognized by extension (.xlsx, .docx, .pptx, etc.)
+# - The appropriate config section (excel, word_options, powerpoint_options) is applied
+# - Folder structure is preserved in output directories
+# - You can use either 'config' (path to YAML) or 'config_inline' (embedded config)
